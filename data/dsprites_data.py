@@ -5,7 +5,7 @@ import math
 from torch.utils.data import Dataset, DataLoader, RandomSampler, Sampler
 
 class DSpritesLoader():
-    def __init__(self, npz_path="./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz"):
+    def __init__(self, npz_path="/home/salman/compsci/msci/data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz"):
         with np.load(npz_path, allow_pickle=True, encoding='latin1') as dataset_zip:
             self.metadata = dataset_zip['metadata'][()]
             self.X = np.reshape(dataset_zip['imgs'], (-1, 4096))
@@ -74,23 +74,36 @@ class DSpritesIIDPairs(Dataset):
         z_idx = self.z_indices[idx]
         z_hat_idx = self.z_hat_indices[idx]
 
-        X = np.array(self.dsprites_loader.X[z_idx], dtype=np.float32)
-        X_ = np.array(self.dsprites_loader.X[z_hat_idx], dtype=np.float32)
+        X = torch.tensor(self.dsprites_loader.X[z_idx], dtype=torch.float32).view(-1, 64, 64)
+        X_ = torch.tensor(self.dsprites_loader.X[z_hat_idx], dtype=torch.float32).view(-1, 64, 64)
 
-        K = np.array(self.k_idx[idx], dtype=np.float32)
-        Y_new = np.array(self.dsprites_loader.Y[idx], dtype=np.long)
+        # cant return irregular tensors
+        # K = np.array(self.k_idx[idx], dtype=np.float32)
+        Y_new = torch.tensor(self.dsprites_loader.Y[idx], dtype=torch.long)
 
-        return (X, X_, K, Y_new.squeeze())
+        return X, X_, Y_new.squeeze()
+
+def get_dsprites(train_size=300000, test_size=10000, batch_size=64, k=None):
+    """
+    Returns train and test DSprites dataset.
+    """
+    dsprites_loader = DSpritesLoader()
+    train_data = DataLoader(DSpritesIIDPairs(size=train_size, dsprites_loader=dsprites_loader, k=k),
+                            batch_size=batch_size, pin_memory=True)
+    test_data = DataLoader(DSpritesIIDPairs(size=test_size, dsprites_loader=dsprites_loader, k=k),
+                            batch_size=batch_size)                    
+    return train_data, test_data
 
 if __name__ == "__main__":
     dsprites_loader = DSpritesLoader()
     data = DataLoader(DSpritesIIDPairs(size=10000, dsprites_loader=dsprites_loader),
-                                batch_size=1)
-    x1, x2, k, *_ = next(iter(data))
-    print(k)
+                                batch_size=32)
+    x1, x2, _ = next(iter(data))
+    x1 = x1[0][0]
+    x2 = x2[0][0]
     fig, axes = plt.subplots(2)
-    axes[0].imshow(x1.reshape(64,64), cmap='Greys_r')
-    axes[1].imshow(x2.reshape(64,64), cmap='Greys_r')
+    axes[0].imshow(x1.view(64,64), cmap='Greys_r')
+    axes[1].imshow(x2.view(64,64), cmap='Greys_r')
     axes[0].set_title("z")
     axes[1].set_title("z_")
     fig.subplots_adjust()
