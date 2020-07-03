@@ -5,7 +5,7 @@ import math
 from torch.utils.data import Dataset, DataLoader, RandomSampler, Sampler
 
 class DSpritesLoader():
-    def __init__(self, npz_path="/home/salman/compsci/msci/data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz"):
+    def __init__(self, npz_path="./data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz"):
         with np.load(npz_path, allow_pickle=True, encoding='latin1') as dataset_zip:
             self.metadata = dataset_zip['metadata'][()]
             self.X = np.reshape(dataset_zip['imgs'], (-1, 4096))

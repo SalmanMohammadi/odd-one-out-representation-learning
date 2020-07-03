@@ -66,14 +66,14 @@ class AdaGVAE(nn.Module):
         self.adaptive = adaptive
 
     def sample(self, loc, logvar):
-        std = torch.exp(0.5*logvar)
-        p_z = torch.rand_like(std)
-        return loc + p_z*std
+        sig = torch.exp(0.5*logvar)
+        p_z = torch.rand_like(sig)
+        return loc + p_z*sig
 
     def forward(self, x1, x2):
         z_loc_1, z_logvar_1 = self.encoder(x1)
         z_loc_2, z_logvar_2 = self.encoder(x2)
-        
+
         z_loc_1, z_logvar_1, z_loc_2, z_logvar_2 = self.average_posterior(z_loc_1, z_logvar_1, z_loc_2, z_logvar_2)
 
         z1 = self.sample(z_loc_1, z_logvar_1)
@@ -97,8 +97,8 @@ class AdaGVAE(nn.Module):
     # averages aggregate posterior according to GVAE strategy in 
     # https://www.ijcai.org/Proceedings/2019/0348.pdf
     def average_posterior(self, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2):
-        z_x1 = dist.Normal(z_loc_1, z_logvar_1.exp().pow(1/2))
-        z_x2 = dist.Normal(z_loc_2, z_logvar_2.exp().pow(1/2))
+        z_x1 = dist.Normal(z_loc_1, z_logvar_1)
+        z_x2 = dist.Normal(z_loc_2, z_logvar_2)
         
         # taking mean here - might take sum
         dim_kl = dist.kl.kl_divergence(z_x1, z_x2)

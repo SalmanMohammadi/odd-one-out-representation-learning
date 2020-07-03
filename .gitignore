@@ -1,3 +1,5 @@
 venv/
 pycache
+__pycache__
 *.swp
+tmp
