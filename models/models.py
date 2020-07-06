@@ -143,7 +143,7 @@ class AdaGVAE(nn.Module):
         
 # similar to train() but for a given number steps by sampling from an "infinite" dataset
 def train_steps(model, dataset, optimizer, num_steps=300000, device=CUDA, 
-                verbose=True, writer=None, log_interval=100, write_interval=10000,
+                verbose=True, writer=None, log_interval=100, write_interval=6000,
                 metrics_labels=None):
     """
     Trains the model for a single 'epoch' on the data
@@ -169,6 +169,13 @@ def train_steps(model, dataset, optimizer, num_steps=300000, device=CUDA,
                 print(", ".join(list(map(lambda x: "%s: %.5f" % x, zip(metrics_labels, metrics)))))
             else:
                 print(metrics)
+        if batch_id % write_interval == 0 and writer:
+            writer.add_scalar('train/loss', train_loss / 64, batch_id)
+            metrics = [x.item()/64 for x in metrics]
+            if metrics_labels:
+                for label, metric in zip(metrics_labels, metrics):
+                    writer.add_scalar('train/'+label, metric, epoch)
+
         
 
     # metrics_mean = np.array(metrics_mean)

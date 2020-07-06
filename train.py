@@ -8,7 +8,7 @@ import models
 from models import AdaGVAE
 from data import dsprites_data as dsprites
 import matplotlib.pyplot as plt
-# from torch.utils.tensorboard import SummaryWriter 
+from torch.utils.tensorboard import SummaryWriter 
 
 CUDA = torch.device('cuda')
 # config_mappings = {
@@ -41,7 +41,7 @@ vae = AdaGVAE(n_channels=1)
 
 opt = optim.Adam(vae.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-8)
 
-writer = None# SummaryWriter(log_dir=model_path)
+writer = SummaryWriter(log_dir=model_path)
 for epoch in range(29):
     models.train(vae, train_data, epoch, opt, verbose=True, writer=writer,
             metrics_labels=labels)

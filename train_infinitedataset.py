@@ -8,7 +8,7 @@ import models
 from models import AdaGVAE
 from data import dsprites_data as dsprites
 import matplotlib.pyplot as plt
-# from torch.utils.tensorboard import SummaryWriter 
+from torch.utils.tensorboard import SummaryWriter 
 
 CUDA = torch.device('cuda')
 # config_mappings = {
@@ -42,8 +42,8 @@ vae = AdaGVAE(n_channels=1)
 
 opt = optim.Adam(vae.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-8)
 
-# writer = SummaryWriter(log_dir=model_path)
-models.train_steps(vae, train_data, opt, verbose=True, writer=None,
+writer = SummaryWriter(log_dir=model_path)
+models.train_steps(vae, train_data, opt, verbose=True, writer=writer,
             metrics_labels=labels)
 
 _, metrics = models.test(vae, test_data, verbose=True, metrics_labels=labels, writer=writer)
@@ -80,5 +80,5 @@ with torch.no_grad():
 
 writer.close()
 torch.save(model.state_dict(), model_path + ".pt")
-# metrics_labels = ['hparam/'+x for x in config.model['metrics_labels']]
-# writer.add_hparams(hparam_dict=config.hparams, metric_dict=dict(zip(metrics_labels, metrics)))
+metrics_labels = ['hparam/'+x for x in config.model['metrics_labels']]
+writer.add_hparams(hparam_dict=config.hparams, metric_dict=dict(zip(metrics_labels, metrics)))
