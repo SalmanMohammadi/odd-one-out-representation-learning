@@ -89,6 +89,8 @@ class AdaGVAE(nn.Module):
         x1 = x1.to(device)
         x2 = x2.to(device)
 
+        x1 = x1.reshape(64, 1, 64, 64)
+        x2 = x2.reshape(64, 1, 64, 64)
         x1_, x2_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2 = self(x1, x2)
 
         return self.loss(x1, x2, x1_, x2_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2)
@@ -135,6 +137,50 @@ class AdaGVAE(nn.Module):
         loc_img = self.decoder(z)
         return loc_img
 
+    def representation(self, x):
+        z_loc, z_logvar = self.encoder(x1)
+        return self.sample(z_loc, z_logvar)
+        
+# similar to train() but for a given number steps by sampling from an "infinite" dataset
+def train_steps(model, dataset, optimizer, num_steps=300000, device=CUDA, 
+                verbose=True, writer=None, log_interval=100, write_interval=10000,
+                metrics_labels=None):
+    """
+    Trains the model for a single 'epoch' on the data
+    """
+    model.train()
+    # train_loss = 0
+    metrics_mean = []
+    dataset_len = num_steps * dataset.batch_size
+    for batch_id, data in enumerate(dataset):
+        optimizer.zero_grad()
+        loss, (*metrics) = model.batch_forward(data, device=device)
+        loss.backward()
+        optimizer.step()
+
+        # train_loss += loss.item()
+        # metrics_mean.append([x.item() for x in metrics])
+        
+        if batch_id % log_interval == 0 and verbose:
+            print('Train step: {}, loss: {}'.format(
+                batch_id, loss.item() / 64))
+            metrics = [x.item()/64 for x in metrics]
+            if metrics_labels:
+                print(", ".join(list(map(lambda x: "%s: %.5f" % x, zip(metrics_labels, metrics)))))
+            else:
+                print(metrics)
+        
+
+    # metrics_mean = np.array(metrics_mean)
+    # metrics_mean = np.sum(metrics_mean, axis=0)/dataset_len
+
+    # if writer:
+    #     writer.add_scalar('train/loss', train_loss /dataset_len, epoch)
+    #     for label, metric in zip(metrics_labels, metrics_mean):
+    #         writer.add_scalar('train/'+label, metric, epoch)
+    # if verbose:
+    #     print('====> Epoch: {} Average loss: {:.4f}'.format(
+    #       epoch, train_loss / dataset_len))
 
 def train(model, dataset, epoch, optimizer, device=CUDA, verbose=True, writer=None, log_interval=100, metrics_labels=None):
     """

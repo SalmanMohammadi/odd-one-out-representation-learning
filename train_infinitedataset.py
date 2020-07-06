@@ -36,14 +36,14 @@ model_path = 'tmp/' + 'adagvae' + experiment_name + experiment_id
 
 
 labels = ["recon_1", "recon_2", "kl_1", "kl_2"]
-train_data, test_data = dsprites.get_dsprites(train_size=737280, test_size=737280, batch_size=64)
+train_data, test_data = dsprites.get_dsprites(train_size=737280, test_size=737280, batch_size=1,
+                                            dataset=dsprites.InfiniteDSpritesIIDPairs)
 vae = AdaGVAE(n_channels=1)
 
 opt = optim.Adam(vae.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-8)
 
-writer = None# SummaryWriter(log_dir=model_path)
-for epoch in range(29):
-    models.train(vae, train_data, epoch, opt, verbose=True, writer=writer,
+# writer = SummaryWriter(log_dir=model_path)
+models.train_steps(vae, train_data, opt, verbose=True, writer=None,
             metrics_labels=labels)
 
 _, metrics = models.test(vae, test_data, verbose=True, metrics_labels=labels, writer=writer)
