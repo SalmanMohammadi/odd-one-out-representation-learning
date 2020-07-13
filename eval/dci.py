@@ -5,39 +5,75 @@ from sklearn.ensemble import GradientBoostingClassifier
 import torch
 import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter 
+import sys
+sys.path.append('../')
 import models
-from models import AdaGVAE
+from models import AdaGVAE, batch_sample_latents
 from data import dsprites_data as dsprites
+from data.dsprites_data import IterableDSPritesIID
 
-def compute_dci(data, model, train_size=10000, test_size=5000, batch_size=16):
+# Calculates the disentanglement, completeness, and informativeness scores
+# Eastwood 2018 https://homepages.inf.ed.ac.uk/ckiw/postscript/iclr_final.pdf
+# implementation based on disentanglement_lib 
+# https://github.com/google-research/disentanglement_lib/blob/master/disentanglement_lib/evaluation/metrics/dci.py
+def compute_dci(model, train_size=10000, test_size=5000, batch_size=16):
+    train_data, test_data = dsprites.get_dsprites(train_size=train_size, test_size=test_size, 
+                                            dataset=IterableDSPritesIID, batch_size=1)
+    train_loc, train_y = batch_sample_latents(model, train_data, train_size, batch_size=batch_size)
+    assert train_loc.shape[0] == train_size
+    assert train_y.shape[0] == train_size
+    test_loc, test_y = batch_sample_latents(model, test_data, test_size, batch_size=batch_size)
+    assert test_loc.shape[0] == test_size
+    assert test_y.shape[0] == test_size
+    importance_matrix, train_err, test_err = compute_importance(train_loc, train_y, test_loc, test_y)
+    
+    assert importance_matrix.shape[0] == train_loc.shape[1]
+    assert importance_matrix.shape[1] == train_y.shape[1]
+
     scores = {}
+    scores["informativeness_train"] = train_err
+    scores["informativeness_test"] = test_err
+    scores["disentanglement"] = disentanglement(importance_matrix)
+    scores["completeness"] = completeness(importance_matrix)
+    print(scores)
+    return scores
+    
+def disentanglement(importance_matrix):
+    latent_entropy = 1. - scipy.stats.entropy(importance_matrix.T + 1e-11,
+                                  base=importance_matrix.shape[1])
+    if importance_matrix.sum() == 0:
+        importance_matrix = np.ones_like(importance_matrix)
+    code_importance = importance_matrix.sum(axis=1) / importance_matrix.sum()
 
-def disentanglement():
-    pass
+    return np.sum(latent_entropy*code_importance)
 
-def completeness():
-    pass
+def completeness(importance_matrix):
+    factor_entropy = 1. - scipy.stats.entropy(importance_matrix + 1e-11,
+                                  base=importance_matrix.shape[0])
+    if importance_matrix.sum() == 0:
+        importance_matrix = np.ones_like(importance_matrix)
+    factor_importance = importance_matrix.sum(axis=0) / importance_matrix.sum()
 
-def informativeness():
-    pass
+    return np.sum(factor_entropy*factor_importance)
 
-def importance_matrix(x_train, y_train, x_test, y_test):
+# x_train, y_train, x_test, y_test shape (num_samples, num_factors)
+def compute_importance(x_train, y_train, x_test, y_test):
     num_factors = y_train.shape[1]
-    num_codes = x_train.shape[0]
-    importance_matrix = np.zeros(shape=[num_codes, num_factors],
-                                dtype=np.float64)
+    num_codes = x_train.shape[1]
+    importance_matrix = np.zeros(shape=[num_codes, num_factors], dtype=np.float64)
     train_loss = []
     test_loss = []
     for i in range(num_factors):
         model = GradientBoostingClassifier()
-        model.fit(x_train.T, y_train[i, :])
+        model.fit(x_train, y_train[:, i])
         importance_matrix[:, i] = np.abs(model.feature_importances_)
-        train_loss.append(np.mean(model.predict(x_train.T) == y_train[i, :]))
-        test_loss.append(np.mean(model.predict(x_test.T) == y_test[i, :]))
+        train_loss.append(np.mean(model.predict(x_train) == y_train[:, i]))
+        test_loss.append(np.mean(model.predict(x_test) == y_test[:, i]))
     return importance_matrix, np.mean(train_loss), np.mean(test_loss)
 
 # def compute_dci(loc_train, y_train, loc_test, y_test):
-if __name__='__main__':
-    _, test_data = dsprites.get_dsprites(train_size=737280, test_size=737280, batch_size=64)
+if __name__ == '__main__':
     vae = AdaGVAE(n_channels=1)
+    vae.load_state_dict(torch.load("../tmp/adagvae/inf/k=rnd+var/2.pt"))
+    print(compute_dci(vae))
     

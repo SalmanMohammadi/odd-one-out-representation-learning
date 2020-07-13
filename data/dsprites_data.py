@@ -84,7 +84,44 @@ class DSpritesIIDPairs(Dataset):
 
         return X, X_, Y_new.squeeze()
 
-class InfiniteDSpritesIIDPairs(IterableDataset):
+class IterableDSPritesIID(IterableDataset):
+    # unused parameter k, just hacking the constructor to be the same
+    def __init__(self, dsprites_loader, size=10000, batch_size=16, k=None):
+
+        self.batch_size = batch_size
+        self.dsprites_loader = dsprites_loader
+        self.num_batches = size
+        self.metadata = self.dsprites_loader.metadata
+        self.latents_sizes = self.metadata['latents_sizes']
+        # An array to convert latent indices to indices in imgs
+        self.latents_bases = np.concatenate((self.latents_sizes[::-1].cumprod()[::-1][1:],
+                                                np.array([1,])))
+
+    def __len__(self):
+        return self.num_batches
+    
+    def __iter__(self):
+        for i in range(self.num_batches):
+            yield self.sample()
+
+    def sample(self):
+        z = self.sample_latent()
+        z_idx = self.latent_to_index(z)
+
+        X = torch.tensor(self.dsprites_loader.X[z_idx], dtype=torch.float32).view(-1, 64, 64)
+        return X, z[:,1:]
+    
+    def latent_to_index(self, latents):
+        return np.dot(latents, self.latents_bases).astype(int)
+    
+    def sample_latent(self):
+        samples = np.zeros((self.batch_size, self.latents_sizes.size))
+        for lat_i, lat_size in enumerate(self.latents_sizes):
+            samples[:, lat_i] = np.random.randint(lat_size, size=self.batch_size)
+
+        return samples
+
+class IterableDSpritesIIDPairs(IterableDataset):
     def __init__(self, dsprites_loader, size=300000, batch_size=64, k=None):
 
         self.k = k
@@ -101,6 +138,7 @@ class InfiniteDSpritesIIDPairs(IterableDataset):
                                                 np.array([1,])))
 
         # moving to returning a generator and only storing batch_size samples in memory
+
         # z, z_, self.k_idx = self.sample_latent_pairs()
         # self.z_indices = self.latent_to_index(z)
         # self.z_hat_indices = self.latent_to_index(z_)
@@ -120,11 +158,14 @@ class InfiniteDSpritesIIDPairs(IterableDataset):
 
         # cant return irregular tensors
         # K = np.array(self.k_idx[idx], dtype=np.float32)
-        return X, X_, (z, z_) 
+        return X, X_, (z[:,1:], z_) 
         
     def __iter__(self):
         for i in range(self.num_batches):
             yield self.sample()
+
+    def __len__(self):
+        return self.num_batches
 
     def latent_to_index(self, latents):
         return np.dot(latents, self.latents_bases).astype(int)
@@ -158,7 +199,6 @@ class InfiniteDSpritesIIDPairs(IterableDataset):
                 z_[i, j] = np.random.randint(lat_size)
         return z, z_, k_idxs
         
-
 def get_dsprites(train_size=300000, test_size=10000, batch_size=64, k=None, dataset=DSpritesIIDPairs):
     """
     Returns train and test DSprites dataset.
@@ -174,10 +214,11 @@ if __name__ == "__main__":
     testing_infinite = True
     if testing_infinite:
         dsprites_loader = DSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
-        data = DataLoader(InfiniteDSpritesIIDPairs(dsprites_loader=dsprites_loader, batch_size=64),
+        data = DataLoader(IterableDSpritesIIDPairs(dsprites_loader=dsprites_loader, batch_size=64),
                                     batch_size=1)
-        x1, x2, _ = next(iter(data))
+        x1, x2, (z, z_) = next(iter(data))
         x1 = x1.reshape(64, 1, 64, 64)
+        print(z.shape)
         print(x1.shape)
         print(x2.shape)
         x1 = x1[0][0]

@@ -3,6 +3,7 @@ import torchvision.datasets as dset
 import torch.nn as nn
 import torchvision.transforms as transforms
 import torch.distributions as dist
+from itertools import islice
 import numpy as np
 
 CUDA = torch.device('cuda')
@@ -65,19 +66,26 @@ class AdaGVAE(nn.Module):
         self.k = k
         self.adaptive = adaptive
 
-    def sample(self, loc, logvar):
-        sig = torch.exp(0.5*logvar)
+    def sample(self, loc, var):
+        sig = var.sqrt()
         p_z = torch.rand_like(sig)
         return loc + p_z*sig
 
+    def sample_log(self, loc, logvar):
+        sig = torch.exp(0.5*logvar)
+        p_z = torch.rand_like(sig)
+        return loc + p_z*sig
+        
     def forward(self, x1, x2):
         z_loc_1, z_logvar_1 = self.encoder(x1)
         z_loc_2, z_logvar_2 = self.encoder(x2)
 
-        z_loc_1, z_logvar_1, z_loc_2, z_logvar_2 = self.average_posterior(z_loc_1, z_logvar_1, z_loc_2, z_logvar_2)
+        z_var_1, z_var_2 = torch.exp(z_logvar_1), torch.exp(z_logvar_2)
 
-        z1 = self.sample(z_loc_1, z_logvar_1)
-        z2 = self.sample(z_loc_2, z_logvar_2)
+        z_loc_1, z_var_1, z_loc_2, z_var_2 = self.average_posterior(z_loc_1, z_var_1, z_loc_2, z_var_2)
+
+        z1 = self.sample(z_loc_1, z_var_1)
+        z2 = self.sample(z_loc_2, z_var_2)
 
         x1_ = self.decoder(z1)
         x2_ = self.decoder(z2)
@@ -88,7 +96,7 @@ class AdaGVAE(nn.Module):
         x1, x2, _ = data
         x1 = x1.to(device)
         x2 = x2.to(device)
-
+        # TODO make invariant to batch size
         x1 = x1.reshape(64, 1, 64, 64)
         x2 = x2.reshape(64, 1, 64, 64)
         x1_, x2_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2 = self(x1, x2)
@@ -98,9 +106,9 @@ class AdaGVAE(nn.Module):
     # p(z1, z2 | x1, x2) = p(z1 | x1)p(z2 | x2)
     # averages aggregate posterior according to GVAE strategy in 
     # https://www.ijcai.org/Proceedings/2019/0348.pdf
-    def average_posterior(self, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2):
-        z_x1 = dist.Normal(z_loc_1, z_logvar_1)
-        z_x2 = dist.Normal(z_loc_2, z_logvar_2)
+    def average_posterior(self, z_loc_1, z_var_1, z_loc_2, z_var_2):
+        z_x1 = dist.Normal(z_loc_1, z_var_1.sqrt())
+        z_x2 = dist.Normal(z_loc_2, z_var_2.sqrt())
         
         # taking mean here - might take sum
         dim_kl = dist.kl.kl_divergence(z_x1, z_x2)
@@ -109,10 +117,10 @@ class AdaGVAE(nn.Module):
         z_loc_1 = torch.where(dim_kl < tau, 0.5*(z_loc_1+z_loc_2), z_loc_1)
         z_loc_2 = torch.where(dim_kl < tau, 0.5*(z_loc_1+z_loc_2), z_loc_2)
         
-        z_logvar_1 = torch.where(dim_kl < tau, 0.5*(z_logvar_1+z_logvar_2), z_logvar_1)
-        z_logvar_2 = torch.where(dim_kl < tau, 0.5*(z_logvar_1+z_logvar_2), z_logvar_2)
+        z_var_1 = torch.where(dim_kl < tau, 0.5*(z_var_1+z_var_2), z_var_1)
+        z_var_2 = torch.where(dim_kl < tau, 0.5*(z_var_1+z_var_2), z_var_2)
 
-        return z_loc_1, z_logvar_1, z_loc_2, z_logvar_2
+        return z_loc_1, z_var_1, z_loc_2, z_var_2
 
     def loss(self, x1, x2, x1_, x2_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2):
         # returns total_loss, recon_1, recon_2, kl_1, kl_2
@@ -132,14 +140,14 @@ class AdaGVAE(nn.Module):
         # encode image x
         z_loc, z_logvar = self.encoder(x)
         # sample in latent space
-        z = self.sample(z_loc, z_logvar)
+        z = self.sample_log(z_loc, z_logvar)
         # decode the image (note we don't sample in image space)
         loc_img = self.decoder(z)
         return loc_img
 
-    def representation(self, x):
-        z_loc, z_logvar = self.encoder(x1)
-        return self.sample(z_loc, z_logvar)
+    def batch_representation(self, x):
+        z_loc, z_logvar = self.encoder(x)
+        return z_loc
         
 # similar to train() but for a given number steps by sampling from an "infinite" dataset
 def train_steps(model, dataset, optimizer, num_steps=300000, device=CUDA, 
@@ -160,21 +168,19 @@ def train_steps(model, dataset, optimizer, num_steps=300000, device=CUDA,
 
         # train_loss += loss.item()
         # metrics_mean.append([x.item() for x in metrics])
-        
+        metrics = [x/64 for x in metrics]
         if batch_id % log_interval == 0 and verbose:
             print('Train step: {}, loss: {}'.format(
                 batch_id, loss.item() / 64))
-            metrics = [x.item()/64 for x in metrics]
             if metrics_labels:
                 print(", ".join(list(map(lambda x: "%s: %.5f" % x, zip(metrics_labels, metrics)))))
             else:
                 print(metrics)
         if batch_id % write_interval == 0 and writer:
-            writer.add_scalar('train/loss', train_loss / 64, batch_id)
-            metrics = [x.item()/64 for x in metrics]
+            writer.add_scalar('train/loss', loss.item() / 64, batch_id)
             if metrics_labels:
                 for label, metric in zip(metrics_labels, metrics):
-                    writer.add_scalar('train/'+label, metric, epoch)
+                    writer.add_scalar('train/'+label, metric, batch_id)
 
         
 
@@ -227,21 +233,22 @@ def train(model, dataset, epoch, optimizer, device=CUDA, verbose=True, writer=No
         print('====> Epoch: {} Average loss: {:.4f}'.format(
           epoch, train_loss / dataset_len))
 
-def test(model, dataset, verbose=True, device=CUDA, metrics_labels=None, writer=None):
+def test(model, dataset, verbose=True, device=CUDA, metrics_labels=None, writer=None, experiment_id=0):
     """
     Evaluates the model
     """
     model.eval()
     test_loss = 0
     metrics_mean = []
+    print(len(dataset.dataset))
     with torch.no_grad():
         for batch_id, data in enumerate(dataset):
             loss, (*metrics) = model.batch_forward(data, device=device)
-            metrics_mean.append([x.item() for x in metrics])
-            test_loss += loss.item()
+            metrics_mean.append([x.item()/64 for x in metrics])
+            test_loss += loss.item()/64
 
-    test_loss /= len(dataset.dataset)
     metrics_mean = np.array(metrics_mean)
+    test_loss /= len(dataset.dataset)
     metrics_mean = np.sum(metrics_mean, axis=0)/len(dataset.dataset)
     # metrics = [x.item()/len(dataset.dataset) for x in metrics]
     if verbose:
@@ -249,7 +256,22 @@ def test(model, dataset, verbose=True, device=CUDA, metrics_labels=None, writer=
             print(", ".join(list(map(lambda x: "%s: %.5f" % x, zip(metrics_labels, metrics_mean)))))
         print("Eval: ", test_loss)
     if writer:
-        writer.add_scalar('test/loss', test_loss)
+        writer.add_scalar('test/loss', test_loss, experiment_id)
         for label, metric in zip(metrics_labels, metrics_mean):
-            writer.add_scalar('test/'+label, metric)
+            writer.add_scalar('test/'+label, metric, experiment_id)
     return test_loss, metrics_mean
+
+def batch_sample_latents(model, data, num_points, batch_size=16, device=CUDA):
+    model.eval()
+    latents = torch.zeros((num_points, 10))
+    labels = torch.zeros((num_points, 5))
+    assert len(data.dataset) >= num_points
+    with torch.no_grad():
+        for i, (X, Z) in enumerate(islice(data, (num_points//batch_size)+1)):
+            X = X.reshape(batch_size, 1, 64, 64).to(device)
+            Z = Z.reshape(batch_size, -1).to(device)
+            n = min(num_points - ((i) * batch_size), batch_size)
+            latents[i*batch_size:(i*batch_size)+n, :] = model.batch_representation(X[:n])
+            labels[i*batch_size:(i*batch_size)+n, :] = Z[:n]
+
+    return latents, labels

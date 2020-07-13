@@ -77,8 +77,12 @@ with torch.no_grad():
     plt.tight_layout()
     plt.axis('off')
     writer.add_figure('test/reconstruction', fig1)
-
+    
 writer.close()
 torch.save(model.state_dict(), model_path + ".pt")
+
+
+
+
 # metrics_labels = ['hparam/'+x for x in config.model['metrics_labels']]
 # writer.add_hparams(hparam_dict=config.hparams, metric_dict=dict(zip(metrics_labels, metrics)))
