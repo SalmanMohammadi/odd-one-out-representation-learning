@@ -42,6 +42,7 @@ experiment_id = '/' + str(args.experiment_id)
 experiment_name = '/' + args.experiment_name if args.experiment_name else ''
 model_path = 'tmp/' + 'adagvae' + experiment_name + experiment_id
 labels = ["recon_1", "recon_2", "kl_1", "kl_2"]
+# labels = ["recon_1", "kl_1"]
 train_data, test_data = dsprites.get_dsprites(train_size=args.steps, test_size=10000, batch_size=1,
                                             dataset=dsprites.IterableDSpritesIIDPairs)
 vae = AdaGVAE(n_channels=1)
