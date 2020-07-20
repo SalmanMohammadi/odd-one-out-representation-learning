@@ -10,7 +10,7 @@ device = torch.device("cuda")
 
 dsprites_loader = dsprites.DSpritesLoader()
 data = dsprites.DataLoader(dsprites.DSpritesIIDPairs(size=300000, dsprites_loader=dsprites_loader),
-                            batch_size=32)
+                            batch_size=64)
 x1, x2, _ = next(iter(data))
 x1 = x1.to(device)
 x2 = x2.to(device)

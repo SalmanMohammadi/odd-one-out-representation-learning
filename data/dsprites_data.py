@@ -293,6 +293,7 @@ if __name__ == "__main__":
             data = DataLoader(IterableDSpritesIIDTriplets(dsprites_loader=dsprites_loader, batch_size=5, k=1),
                                         batch_size=1)
             x1, x2, x3 = next(iter(data))
+            print(x1.shape)
             x1 = x1.reshape(5, 64, 64)
             x2 = x2.reshape(5, 64, 64)
             x3 = x3.reshape(5, 64, 64)
@@ -305,6 +306,7 @@ if __name__ == "__main__":
             axes[0][1].set_title("B")
             axes[0][2].set_title("X")
             fig.subplots_adjust()
+            plt.show()
 
     else:
         dsprites_loader = DSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')

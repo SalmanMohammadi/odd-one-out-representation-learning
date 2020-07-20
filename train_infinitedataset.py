@@ -5,25 +5,13 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision.transforms as transforms
 import models
-from models import AdaGVAE
+from models import AdaGVAE, TVAE
 from data import dsprites_data as dsprites
 import matplotlib.pyplot as plt
 from eval import dci
 from torch.utils.tensorboard import SummaryWriter 
 
 CUDA = torch.device('cuda')
-# config_mappings = {
-#     'vae': configs.vanilla_vae,
-#     'isvae': configs.isvae,
-#     'lisvae': configs.lisvae,
-# }
-
-# def hparams_to_dict(kv):
-#     if kv:
-#         res = lambda kv: dict(list(map(lambda x: (x.split("=")[0], eval(x.split("=")[1])), kv.split(","))))
-#         return res(kv)
-#     else:
-#         return {}
 
 parser = argparse.ArgumentParser()
 # parser.add_argument("--model", type=str)
@@ -41,11 +29,13 @@ if args.train and args.test:
 experiment_id = '/' + str(args.experiment_id)
 experiment_name = '/' + args.experiment_name if args.experiment_name else ''
 model_path = 'tmp/' + 'adagvae' + experiment_name + experiment_id
-labels = ["recon_1", "recon_2", "kl_1", "kl_2"]
+labels = ["recon_1", "recon_2", "recon_3", "kl_1", "kl_2", "kl_3"]
+# labels = ["recon_1", "recon_2", "kl_1", "kl_2"]
 # labels = ["recon_1", "kl_1"]
-train_data, test_data = dsprites.get_dsprites(train_size=args.steps, test_size=10000, batch_size=1,
-                                            dataset=dsprites.IterableDSpritesIIDPairs)
-vae = AdaGVAE(n_channels=1)
+
+train_data, test_data = dsprites.get_dsprites(train_size=args.steps, test_size=10000, batch_size=1, k=1,
+                                            dataset=dsprites.IterableDSpritesIIDTriplets)
+vae = TVAE(n_channels=1)
 writer = SummaryWriter(log_dir=model_path)
 if not args.test:
     opt = optim.Adam(vae.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-8)

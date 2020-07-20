@@ -57,8 +57,6 @@ class AdaGVAE(nn.Module):
         self.decoder = Decoder(z_dim, n_channels)
 
         if use_cuda:
-            # calling cuda() here will put all the parameters of
-            # the encoder and decoder networks into gpu memory
             self.cuda()
         self.use_cuda = use_cuda
         self.z_dim = z_dim
@@ -76,14 +74,6 @@ class AdaGVAE(nn.Module):
         p_z = torch.randn_like(sig)
         return loc + p_z*sig
         
-    # def forward(self, x1):
-    #     z_loc_1, z_logvar_1 = self.encoder(x1)
-    #     z1 = self.sample_log(z_loc_1, z_logvar_1)
-
-    #     x1_ = self.decoder(z1)
-
-    #     return x1_, z_loc_1, z_logvar_1
-
     def forward(self, x1, x2):
         z_loc_1, z_logvar_1 = self.encoder(x1)
         z_loc_2, z_logvar_2 = self.encoder(x2)
@@ -102,39 +92,18 @@ class AdaGVAE(nn.Module):
 
     def batch_forward(self, data, device):
         x1, x2, _ = data
-        x1 = x1.to(device)
-        x2 = x2.to(device)
-        # TODO make invariant to batch size
-        x1 = x1.reshape(64, 1, 64, 64)
-        x2 = x2.reshape(64, 1, 64, 64)
+
+        x1 = x1.to(device).permute(1,0,2,3)
+        x2 = x2.to(device).permute(1,0,2,3)
         
         x1_, x2_, z_loc_1, z_var_1, z_loc_2, z_var_2 = self(x1, x2)
 
         return self.loss(x1, x2, x1_, x2_, z_loc_1, z_var_1, z_loc_2, z_var_2)
 
-    # def batch_forward_single(self, data, device):
-    #     x1, _, _ = data
-    #     x1 = x1.to(device)
-    #     # x2 = x2.to(device)
-    #     # TODO make invariant to batch size
-    #     x1 = x1.reshape(64, 1, 64, 64)
-    #     # x2 = x2.reshape(64, 1, 64, 64)
-    #     x1_, z_loc_1, z_logvar_1 = self(x1)
-    #     x1, x1_ = x1.squeeze(), x1_.squeeze()
-    #     r = nn.functional.binary_cross_entropy_with_logits(x1_, x1, reduction='sum').div(64)
-    #     kl = -0.5 * torch.sum(1 + z_logvar_1 - z_loc_1.pow(2) - z_logvar_1.exp(), 1).mean(0)
-    #     return r + kl, r, kl
-
-
     # p(z1, z2 | x1, x2) = p(z1 | x1)p(z2 | x2)
     # averages aggregate posterior according to GVAE strategy in 
     # https://www.ijcai.org/Proceedings/2019/0348.pdf
     def average_posterior(self, z_loc_1, z_var_1, z_loc_2, z_var_2):
-        # z_x1 = dist.Normal(z_loc_1, z_var_1.sqrt())
-        # z_x2 = dist.Normal(z_loc_2, z_var_2.sqrt())
-        
-        # taking mean here - might take sum
-        # dim_kl = dist.kl.kl_divergence(z_x1, z_x2)
         dim_kl = self.compute_gasussian_kl_pair(z_loc_1, z_var_1, z_loc_2, z_var_2)
         tau = 0.5 * (torch.max(dim_kl, 1)[0][:,None] + torch.min(dim_kl, 1)[0][:,None])
 
@@ -148,8 +117,7 @@ class AdaGVAE(nn.Module):
 
     def loss(self, x1, x2, x1_, x2_, z_loc_1, z_var_1, z_loc_2, z_var_2):
         # returns total_loss, recon_1, recon_2, kl_1, kl_2
-        # reconstruction loss
-        # print(x1_, x1)
+
         r_1 = nn.functional.binary_cross_entropy_with_logits(x1_, x1, reduction='sum').div(64)
         r_2 = nn.functional.binary_cross_entropy_with_logits(x2_, x2, reduction='sum').div(64)
         kl_1 = -0.5 * torch.sum(1 + z_var_1.log() - z_loc_1.pow(2) - z_var_1, 1).mean(0)
@@ -175,7 +143,71 @@ class AdaGVAE(nn.Module):
     def batch_representation(self, x):
         z_loc, z_logvar = self.encoder(x)
         return z_loc
+
+# TripletVAE
+class TVAE(AdaGVAE):
+    def sample(self, loc, var):
+        sig = var.sqrt()
+        p_z = torch.randn_like(sig)
+        return loc + p_z*sig
+
+    def sample_log(self, loc, logvar):
+        sig = torch.exp(0.5*logvar)
+        p_z = torch.randn_like(sig)
+        return loc + p_z*sig
         
+    def forward(self, x1, x2, x3):
+        z_loc_1, z_logvar_1 = self.encoder(x1)
+        z_loc_2, z_logvar_2 = self.encoder(x2)
+        z_loc_3, z_logvar_3 = self.encoder(x2)
+
+        z1 = self.sample_log(z_loc_1, z_logvar_1)
+        z2 = self.sample_log(z_loc_2, z_logvar_2)
+        z3 = self.sample_log(z_loc_3, z_logvar_3)
+
+        x1_ = self.decoder(z1)
+        x2_ = self.decoder(z2)
+        x3_ = self.decoder(z3)
+
+        return x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3
+
+    def batch_forward(self, data, device):
+        x1, x2, x3 = data
+
+        x1 = x1.to(device).permute(1,0,2,3)
+        x2 = x2.to(device).permute(1,0,2,3)
+
+        x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3 = self(x1, x2)
+
+        return self.loss(x1, x2, x3, x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3)
+
+    def loss(self, x1, x2, x3, x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3):
+        # returns total_loss, recon_1, recon_2, recon_3, kl_1, kl_2, kl_3
+
+        r_1 = nn.functional.binary_cross_entropy_with_logits(x1_, x1, reduction='sum').div(64)
+        r_2 = nn.functional.binary_cross_entropy_with_logits(x2_, x2, reduction='sum').div(64)
+        r_3 = nn.functional.binary_cross_entropy_with_logits(x3_, x3, reduction='sum').div(64)
+        kl_1 = -0.5 * torch.sum(1 + z_logvar_1 - z_loc_1.pow(2) - z_logvar_1.exp(), 1).mean(0)
+        kl_2 = -0.5 * torch.sum(1 + z_logvar_2 - z_loc_2.pow(2) - z_logvar_2.exp(), 1).mean(0)
+        kl_3 = -0.5 * torch.sum(1 + z_logvar_3 - z_loc_2.pow(2) - z_logvar_3.exp(), 1).mean(0)
+
+        return r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3, r_1, r_2, r_3, kl_1, kl_2, kl_3
+
+    # define a helper function for reconstructing images
+    def reconstruct_img(self, x):
+        # encode image x
+        z_loc, z_logvar = self.encoder(x)
+        # sample in latent space
+        z = self.sample_log(z_loc, z_logvar)
+        # decode the image (note we don't sample in image space)
+        loc_img = self.decoder(z)
+        return nn.functional.sigmoid(loc_img)
+
+    def batch_representation(self, x):
+        z_loc, z_logvar = self.encoder(x)
+        return z_loc
+
+
 # similar to train() but for a given number steps by sampling from an "infinite" dataset
 def train_steps(model, dataset, optimizer, num_steps=300000, device=CUDA, 
                 verbose=True, writer=None, log_interval=100, write_interval=6000,
