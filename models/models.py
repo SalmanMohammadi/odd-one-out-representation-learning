@@ -1,3 +1,4 @@
+import math
 import torch
 import torchvision.datasets as dset
 import torch.nn as nn
@@ -146,20 +147,16 @@ class AdaGVAE(nn.Module):
 
 # TripletVAE
 class TVAE(AdaGVAE):
-    def sample(self, loc, var):
-        sig = var.sqrt()
-        p_z = torch.randn_like(sig)
-        return loc + p_z*sig
+    def __init__(self, z_dim=10, n_channels=3, use_cuda=True, adaptive=True, k=None):
+        super().__init__(z_dim, n_channels, use_cuda, adaptive, k)
 
-    def sample_log(self, loc, logvar):
-        sig = torch.exp(0.5*logvar)
-        p_z = torch.randn_like(sig)
-        return loc + p_z*sig
-        
+        self.fc_disc = nn.Linear(1, 1)
+        self.cuda()
+
     def forward(self, x1, x2, x3):
         z_loc_1, z_logvar_1 = self.encoder(x1)
         z_loc_2, z_logvar_2 = self.encoder(x2)
-        z_loc_3, z_logvar_3 = self.encoder(x2)
+        z_loc_3, z_logvar_3 = self.encoder(x3)
 
         z1 = self.sample_log(z_loc_1, z_logvar_1)
         z2 = self.sample_log(z_loc_2, z_logvar_2)
@@ -176,8 +173,9 @@ class TVAE(AdaGVAE):
 
         x1 = x1.to(device).permute(1,0,2,3)
         x2 = x2.to(device).permute(1,0,2,3)
+        x3 = x3.to(device).permute(1,0,2,3)
 
-        x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3 = self(x1, x2)
+        x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3 = self(x1, x2, x3)
 
         return self.loss(x1, x2, x3, x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3)
 
@@ -187,25 +185,106 @@ class TVAE(AdaGVAE):
         r_1 = nn.functional.binary_cross_entropy_with_logits(x1_, x1, reduction='sum').div(64)
         r_2 = nn.functional.binary_cross_entropy_with_logits(x2_, x2, reduction='sum').div(64)
         r_3 = nn.functional.binary_cross_entropy_with_logits(x3_, x3, reduction='sum').div(64)
+
         kl_1 = -0.5 * torch.sum(1 + z_logvar_1 - z_loc_1.pow(2) - z_logvar_1.exp(), 1).mean(0)
         kl_2 = -0.5 * torch.sum(1 + z_logvar_2 - z_loc_2.pow(2) - z_logvar_2.exp(), 1).mean(0)
         kl_3 = -0.5 * torch.sum(1 + z_logvar_3 - z_loc_2.pow(2) - z_logvar_3.exp(), 1).mean(0)
+        
+        loss = r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3
 
-        return r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3, r_1, r_2, r_3, kl_1, kl_2, kl_3
+        # d(x1,x2)
+        d_1 = torch.norm(z_loc_1 - z_loc_2, 2, 1, True)
+        # d(x1, x3)
+        d_2 = torch.norm(z_loc_1 - z_loc_3, 2, 1, True)
+        # d(x2, x3)
+        d_3 = torch.norm(z_loc_2 - z_loc_3, 2, 1, True)
+        # log p(y|d(x1,x2)^2 - d(x1,x3)^2)
+        # fully connected nn layer 
+        y_1 = self.fc_disc(d_1.pow(2) - d_2.pow(2))
+        y_2 = self.fc_disc(d_2.pow(2) - d_3.pow(2))
+        y = nn.functional.binary_cross_entropy_with_logits(y_1, torch.ones(64, 1).to(CUDA), reduction='sum').div(64)
+        y_ = nn.functional.binary_cross_entropy_with_logits(y_2, torch.ones(64, 1).to(CUDA)*-1., reduction='sum').div(64)
 
-    # define a helper function for reconstructing images
-    def reconstruct_img(self, x):
-        # encode image x
-        z_loc, z_logvar = self.encoder(x)
-        # sample in latent space
-        z = self.sample_log(z_loc, z_logvar)
-        # decode the image (note we don't sample in image space)
-        loc_img = self.decoder(z)
-        return nn.functional.sigmoid(loc_img)
+        loss += y + y_
+        return loss, r_1, r_2, r_3, kl_1, kl_2, kl_3, y, y_
 
-    def batch_representation(self, x):
-        z_loc, z_logvar = self.encoder(x)
-        return z_loc
+
+class AdaTVAE(AdaGVAE):
+    def forward(self, x1, x2, x3):
+        z_loc_1, z_logvar_1 = self.encoder(x1)
+        z_loc_2, z_logvar_2 = self.encoder(x2)
+        z_loc_3, z_logvar_3 = self.encoder(x3)
+        
+        z_var_1 = torch.exp(z_logvar_1)
+        z_var_2 = torch.exp(z_logvar_2)
+        z_var_3 = torch.exp(z_logvar_3)
+
+        z_loc_1, z_var_1, z_loc_2, z_var_2 = self.average_posterior(z_loc_1, z_var_1, z_loc_2, z_var_2)
+
+        z1 = self.sample(z_loc_1, z_var_1)
+        z2 = self.sample(z_loc_2, z_var_2)
+        z3 = self.sample(z_loc_3, z_var_3)
+
+        x1_ = self.decoder(z1)
+        x2_ = self.decoder(z2)
+        x3_ = self.decoder(z3)
+
+        return x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3
+
+    def total_correlation(self, z, z_loc, z_logvar):
+        log_qz_prob = gaussian_log_density(z.view(64, 1, 10), z_loc, z_logvar)
+        log_qz_prod = torch.logsumexp(log_qz_prob, 1).sum(1)
+        log_qz = torch.logsumexp(log_qz_prob.sum(2), 1)
+
+        return torch.mean(log_qz - log_qz_prod)
+
+    def average_posterior(self, z_loc_1, z_var_1, z_loc_2, z_var_2):
+        # average coordinates for q(z|x1) and q(z|x2)
+        dim_kl = self.compute_gasussian_kl_pair(z_loc_1, z_var_1, z_loc_2, z_var_2)
+        dim_kl = dim_kl.sort(1)[1][:,:4]
+        loc_avg = 0.5 * (z_loc_1.gather(1, dim_kl, sparse_grad=True) + z_loc_2.gather(1, dim_kl, sparse_grad=True))
+        var_avg = 0.5 * (z_var_1.gather(1, dim_kl, sparse_grad=True) + z_var_2.gather(1, dim_kl, sparse_grad=True))
+        z_loc_1[:,:4], z_var_1[:,:4] = loc_avg.clone(), var_avg.clone()
+        z_loc_2[:,:4], z_var_2[:,:4] = loc_avg.clone(), var_avg.clone()
+
+        return z_loc_1, z_var_1, z_loc_2, z_var_2
+
+    def batch_forward(self, data, device):
+        x1, x2, x3 = data
+
+        x1 = x1.to(device).permute(1,0,2,3)
+        x2 = x2.to(device).permute(1,0,2,3)
+        x3 = x3.to(device).permute(1,0,2,3)
+
+        x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3 = self(x1, x2, x3)
+
+        return self.loss(x1, x2, x3, x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3)
+
+    def loss(self, x1, x2, x3, x1_, x2_, x3_, 
+            z_loc_1, z_logvar_1, 
+            z_loc_2, z_logvar_2, 
+            z_loc_3, z_logvar_3):
+        # returns total_loss, recon_1, recon_2, recon_3, kl_1, kl_2, kl_3
+
+        r_1 = nn.functional.binary_cross_entropy_with_logits(x1_, x1, reduction='sum').div(64)
+        r_2 = nn.functional.binary_cross_entropy_with_logits(x2_, x2, reduction='sum').div(64)
+        r_3 = nn.functional.binary_cross_entropy_with_logits(x3_, x3, reduction='sum').div(64)
+
+        kl_1 = -0.5 * torch.sum(1 + z_logvar_1 - z_loc_1.pow(2) - z_logvar_1.exp(), 1).mean(0)
+        kl_2 = -0.5 * torch.sum(1 + z_logvar_2 - z_loc_2.pow(2) - z_logvar_2.exp(), 1).mean(0)
+        kl_3 = -0.5 * torch.sum(1 + z_logvar_3 - z_loc_2.pow(2) - z_logvar_3.exp(), 1).mean(0)
+        
+        tc = self.total_correlation(self.sample_log(z_loc_1, z_logvar_1), z_loc_1, z_logvar_1)
+
+        loss = r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3 - tc
+
+        return loss, r_1, r_2, r_3, kl_1, kl_2, kl_3, tc
+
+def gaussian_log_density(x, z_loc, z_logvar):
+    norm = torch.autograd.Variable(torch.tensor([np.log(2*np.pi)], device=CUDA))
+    inv_sig = torch.exp(-0.5 * z_logvar)
+    tmp = (x - z_loc) * inv_sig
+    return -0.5 * (tmp * tmp + z_logvar + norm)
 
 
 # similar to train() but for a given number steps by sampling from an "infinite" dataset

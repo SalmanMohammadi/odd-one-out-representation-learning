@@ -230,24 +230,25 @@ class IterableDSpritesIIDTriplets(IterableDSpritesIIDPairs):
         z_1 = np.zeros((self.batch_size, self.latents_sizes.size))
         for lat_i, lat_size in enumerate(self.latents_sizes):
             z_1[:, lat_i] = np.random.randint(lat_size, size=self.batch_size)
-
         # sample k factors of variation which should not be shared between x1,x2
         # but will be the only factor shared between x1,x3 and x2,x3
         # k ~ unif(1, d-1)
         if not self.k:
             k_samples = np.random.randint(1, (self.latents_sizes.size-1), size=self.batch_size)
+        elif self.k == 1:
+            # k_samples = np.ones((self.batch_size), dtype=int)
+            k_idxs = np.random.randint(1, self.latents_sizes.size, size=self.batch_size)
+            lat_range = list(range(1, self.latents_sizes.size))
+            k_idxs_1 = [lat_range[:k_]+lat_range[k_+1:] for k_ in k_idxs]
         else:
             k_samples = np.ones((self.batch_size), dtype=int) * self.k
 
-        k_idxs = [np.random.choice(np.arange(1, self.latents_sizes.size), size=k_, replace=False) 
-                    for k_ in k_samples]
         z_2 = np.array(z_1)
         z_3 = np.array(z_1)
-        for i, idx in enumerate(k_idxs):
+        for i, (idx, idx_1) in enumerate(zip(k_idxs[:, None], k_idxs_1)):
             for j, lat_size in zip(idx, self.latents_sizes[idx]):
                 z_2[i, j] = np.random.randint(lat_size)
-            idx = np.setdiff1d(list(range(1, self.latents_sizes.size)), idx, assume_unique=True)
-            for j, lat_size in zip(idx, self.latents_sizes[idx]):
+            for j, lat_size in zip(idx_1, self.latents_sizes[idx_1]):
                 z_3[i, j] = np.random.randint(lat_size)
         return z_1, z_2, z_3, k_idxs
     
@@ -261,9 +262,9 @@ def get_dsprites(train_size=300000, test_size=10000, batch_size=64, k=None, data
     """
     dsprites_loader = DSpritesLoader(npz_path='./data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
     train_data = DataLoader(dataset(size=train_size, dsprites_loader=dsprites_loader, k=k),
-                            batch_size=batch_size, pin_memory=True)
+                            batch_size=batch_size)#, pin_memory=True, num_workers=16)
     test_data = DataLoader(dataset(size=test_size, dsprites_loader=dsprites_loader, k=k),
-                            batch_size=batch_size)                    
+                            batch_size=batch_size)#, pin_memory=True, num_workers=16)                    
     return train_data, test_data
 
 if __name__ == "__main__":
