@@ -241,12 +241,16 @@ class AdaTVAE(AdaGVAE):
     def average_posterior(self, z_loc_1, z_var_1, z_loc_2, z_var_2):
         # average coordinates for q(z|x1) and q(z|x2)
         dim_kl = self.compute_gasussian_kl_pair(z_loc_1, z_var_1, z_loc_2, z_var_2)
-        dim_kl = dim_kl.sort(1)[1][:,:4]
-        loc_avg = 0.5 * (z_loc_1.gather(1, dim_kl, sparse_grad=True) + z_loc_2.gather(1, dim_kl, sparse_grad=True))
-        var_avg = 0.5 * (z_var_1.gather(1, dim_kl, sparse_grad=True) + z_var_2.gather(1, dim_kl, sparse_grad=True))
-        z_loc_1[:,:4], z_var_1[:,:4] = loc_avg.clone(), var_avg.clone()
-        z_loc_2[:,:4], z_var_2[:,:4] = loc_avg.clone(), var_avg.clone()
+        kl_idx = dim_kl.sort(1)[1][:,:4]
+        loc_avg = 0.5 * (z_loc_1.gather(1, kl_idx) + z_loc_2.gather(1, kl_idx))
+        var_avg = 0.5 * (z_var_1.gather(1, kl_idx) + z_var_2.gather(1, kl_idx))
+        z_loc_1 = z_loc_1.scatter(1, kl_idx, loc_avg)
+        z_loc_2 = z_loc_2.scatter(1, kl_idx, loc_avg)
 
+        z_var_1 = z_var_1.scatter(1, kl_idx, var_avg)
+        z_var_2 = z_var_2.scatter(1, kl_idx, var_avg)
+        # z_loc_1[:,kl_idx], z_var_1[:,kl_idx] = loc_avg.clone(), z_var_1[:,kl_idx]#var_avg.clone()
+        # z_loc_2[:,kl_idx], z_var_2[:,kl_idx] = loc_avg.clone(), z_var_2[:,kl_idx]#var_avg.clone()
         return z_loc_1, z_var_1, z_loc_2, z_var_2
 
     def batch_forward(self, data, device):

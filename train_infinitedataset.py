@@ -46,7 +46,6 @@ train_data, test_data = dsprites.get_dsprites(train_size=args.steps, test_size=1
 model_dict = {'adagvae': AdaGVAE, 'tvae': TVAE, 'adatvae': AdaTVAE}
 vae = model_dict[args.model](n_channels=1)
 writer = SummaryWriter(log_dir=model_path)
-torch.autograd.set_detect_anomaly(True)
 if not args.test:
     opt = optim.Adam(vae.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-8)
     models.train_steps(vae, train_data, opt, verbose=True, writer=writer,
