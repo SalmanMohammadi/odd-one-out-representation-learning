@@ -219,7 +219,7 @@ class AdaTVAE(AdaGVAE):
         z_var_2 = torch.exp(z_logvar_2)
         z_var_3 = torch.exp(z_logvar_3)
 
-        z_loc_1, z_var_1, z_loc_2, z_var_2 = self.average_posterior(z_loc_1, z_var_1, z_loc_2, z_var_2)
+        # z_loc_1, z_var_1, z_loc_2, z_var_2 = self.average_posterior(z_loc_1, z_var_1, z_loc_2, z_var_2)
 
         z1 = self.sample(z_loc_1, z_var_1)
         z2 = self.sample(z_loc_2, z_var_2)
@@ -235,16 +235,21 @@ class AdaTVAE(AdaGVAE):
         # select k dimensions with highest dkl(z1|z3)+dkl(z2|z3)
         dim_kl_1 = self.compute_gasussian_kl_pair(z_loc_1, z_logvar_1.exp(), z_loc_3, z_logvar_3.exp())
         dim_kl_2 = self.compute_gasussian_kl_pair(z_loc_2, z_logvar_2.exp(), z_loc_3, z_logvar_3.exp())
-        dim_kl = dim_kl_1 + dim_kl_2
-        kl_idx = dim_kl.sort(1, descending=True)[1][:,:4]
+        kl_idx_1 = dim_kl_1.sort(1, descending=True)[1][:,:4]
         
-        z3_ = z3.gather(1, kl_idx)
-        z_loc_3_ = z3.gather(1, kl_idx)
-        z_logvar_3_ = z3.gather(1, kl_idx)
+        z3_ = z3.gather(1, kl_idx_1)
+        z_loc_3_ = z_loc_3.gather(1, kl_idx_1)
+        z_logvar_3_ = z_logvar_3.gather(1, kl_idxkl_idx_1)
         # tc term 1 dkl(z1|prod(k)z3)
         tc_1 = self.total_correlation(z1, z_loc_1, z_logvar_1, z3_, z_loc_3_, z_logvar_3_)
         # tc term 2 dkl(z2|prod(k)z3)
-        tc_2 = self.total_correlation(z2, z_loc_2, z_logvar_2, z3_, z_loc_3_, z_logvar_3_)
+        kl_idx_2 = dim_kl_2.sort(1, descending=True)[1][:,:4]
+        
+        z3_1 = z3.gather(1, kl_idx_2)
+        z_loc_3_1 = z_loc_3.gather(1, kl_idx_2)
+        z_logvar_3_1 = z_logvar_3.gather(1, kl_idx_2)
+        # tc term 1 dkl(z1|prod(k)z3)
+        tc_2 = self.total_correlation(z2, z_loc_2, z_logvar_2, z3_1, z_loc_3_1, z_logvar_3_1)
 
         return tc_1 + tc_2, tc_1, tc_2
 
@@ -307,7 +312,7 @@ class AdaTVAE(AdaGVAE):
         kl_3 = -0.5 * torch.sum(1 + z_logvar_3 - z_loc_2.pow(2) - z_logvar_3.exp(), 1).mean(0)
 
         tc, tc_1, tc_2 = self.triangle_factorisation(z1, z_loc_1, z_logvar_1, z2, z_loc_2, z_logvar_2, z3, z_loc_3, z_logvar_3)
-        loss = r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3 + tc
+        loss = r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3 - tc
 
         return loss, r_1, r_2, r_3, kl_1, kl_2, kl_3, tc, tc_1, tc_2
 
