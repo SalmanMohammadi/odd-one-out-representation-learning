@@ -229,16 +229,37 @@ class AdaTVAE(AdaGVAE):
         x2_ = self.decoder(z2)
         x3_ = self.decoder(z3)
 
-        return x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3
+        return x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3, z1, z2, z3
 
-    def total_correlation(self, z, z_loc, z_logvar):
-        log_qz_prob = gaussian_log_density(z.view(64, 1, 10), z_loc, z_logvar)
-        log_qz_prod = torch.logsumexp(log_qz_prob, 1).sum(1)
-        log_qz = torch.logsumexp(log_qz_prob.sum(2), 1)
+    def triangle_factorisation(self, z1, z_loc_1, z_logvar_1, z2, z_loc_2, z_logvar_2, z3, z_loc_3, z_logvar_3):
+        # select k dimensions with highest dkl(z1|z3)+dkl(z2|z3)
+        dim_kl_1 = self.compute_gasussian_kl_pair(z_loc_1, z_logvar_1.exp(), z_loc_3, z_logvar_3.exp())
+        dim_kl_2 = self.compute_gasussian_kl_pair(z_loc_2, z_logvar_2.exp(), z_loc_3, z_logvar_3.exp())
+        dim_kl = dim_kl_1 + dim_kl_2
+        kl_idx = dim_kl.sort(1, descending=True)[1][:,:4]
+        
+        z3_ = z3.gather(1, kl_idx)
+        z_loc_3_ = z3.gather(1, kl_idx)
+        z_logvar_3_ = z3.gather(1, kl_idx)
+        # tc term 1 dkl(z1|prod(k)z3)
+        tc_1 = self.total_correlation(z1, z_loc_1, z_logvar_1, z3_, z_loc_3_, z_logvar_3_)
+        # tc term 2 dkl(z2|prod(k)z3)
+        tc_2 = self.total_correlation(z2, z_loc_2, z_logvar_2, z3_, z_loc_3_, z_logvar_3_)
+
+        return tc_1 + tc_2, tc_1, tc_2
+
+    def total_correlation(self, z1, z_loc_1, z_logvar_1, z2, z_loc_2, z_logvar_2):
+        # dkl(z1|prod_j z2)
+        j_ = z2.shape[1]
+        log_qz_1 = gaussian_log_density(z1.view(64, 1, 10), z_loc_1, z_logvar_1)
+        log_qz_2 = gaussian_log_density(z2.view(64, 1, j_), z_loc_2, z_logvar_2)
+        log_qz_prod = torch.logsumexp(log_qz_2, 1).sum(1)
+        log_qz = torch.logsumexp(log_qz_1.sum(2), 1)
 
         return torch.mean(log_qz - log_qz_prod)
 
     def average_posterior(self, z_loc_1, z_var_1, z_loc_2, z_var_2):
+        # could also average d-k factors for q(z|x3)...
         # average coordinates for q(z|x1) and q(z|x2)
         dim_kl = self.compute_gasussian_kl_pair(z_loc_1, z_var_1, z_loc_2, z_var_2)
         kl_idx = dim_kl.sort(1)[1][:,:4]
@@ -260,14 +281,21 @@ class AdaTVAE(AdaGVAE):
         x2 = x2.to(device).permute(1,0,2,3)
         x3 = x3.to(device).permute(1,0,2,3)
 
-        x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3 = self(x1, x2, x3)
+        x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3, z1, z2, z3 = self(x1, x2, x3)
 
-        return self.loss(x1, x2, x3, x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3)
+        return self.loss(x1, x2, x3, 
+                        x1_, x2_, x3_, 
+                        z_loc_1, z_logvar_1, 
+                        z_loc_2, z_logvar_2, 
+                        z_loc_3, z_logvar_3,
+                        z1, z2, z3)
 
-    def loss(self, x1, x2, x3, x1_, x2_, x3_, 
+    def loss(self, x1, x2, x3, 
+            x1_, x2_, x3_, 
             z_loc_1, z_logvar_1, 
             z_loc_2, z_logvar_2, 
-            z_loc_3, z_logvar_3):
+            z_loc_3, z_logvar_3,
+            z1, z2, z3):
         # returns total_loss, recon_1, recon_2, recon_3, kl_1, kl_2, kl_3
 
         r_1 = nn.functional.binary_cross_entropy_with_logits(x1_, x1, reduction='sum').div(64)
@@ -277,19 +305,17 @@ class AdaTVAE(AdaGVAE):
         kl_1 = -0.5 * torch.sum(1 + z_logvar_1 - z_loc_1.pow(2) - z_logvar_1.exp(), 1).mean(0)
         kl_2 = -0.5 * torch.sum(1 + z_logvar_2 - z_loc_2.pow(2) - z_logvar_2.exp(), 1).mean(0)
         kl_3 = -0.5 * torch.sum(1 + z_logvar_3 - z_loc_2.pow(2) - z_logvar_3.exp(), 1).mean(0)
-        
-        tc = self.total_correlation(self.sample_log(z_loc_1, z_logvar_1), z_loc_1, z_logvar_1)
 
-        loss = r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3 - tc
+        tc, tc_1, tc_2 = self.triangle_factorisation(z1, z_loc_1, z_logvar_1, z2, z_loc_2, z_logvar_2, z3, z_loc_3, z_logvar_3)
+        loss = r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3 + tc
 
-        return loss, r_1, r_2, r_3, kl_1, kl_2, kl_3, tc
+        return loss, r_1, r_2, r_3, kl_1, kl_2, kl_3, tc, tc_1, tc_2
 
 def gaussian_log_density(x, z_loc, z_logvar):
     norm = torch.autograd.Variable(torch.tensor([np.log(2*np.pi)], device=CUDA))
     inv_sig = torch.exp(-0.5 * z_logvar)
     tmp = (x - z_loc) * inv_sig
     return -0.5 * (tmp * tmp + z_logvar + norm)
-
 
 # similar to train() but for a given number steps by sampling from an "infinite" dataset
 def train_steps(model, dataset, optimizer, num_steps=300000, device=CUDA, 

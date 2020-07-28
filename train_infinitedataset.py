@@ -34,7 +34,7 @@ experiment_name = '/' + args.experiment_name if args.experiment_name else ''
 model_path = 'tmp/' + args.model + '/' + experiment_name + experiment_id
 
 label_dict = {
-    'adatvae': ["recon_1", "recon_2", "recon_3", "kl_1", "kl_2", "kl_3", "tc"],
+    'adatvae': ["recon_1", "recon_2", "recon_3", "kl_1", "kl_2", "kl_3", "tc", "tc_1", "tc_2"],
     'tvae': ["recon_1", "recon_2", "recon_3", "kl_1", "kl_2", "kl_3", "y", "y_"],
     # 'tvae': ["recon_1", "recon_2", "recon_3", "kl_1", "kl_2", "kl_3"],
     'adagvae': ["recon_1", "recon_2", "kl_1", "kl_2"],
