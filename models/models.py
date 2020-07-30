@@ -239,7 +239,7 @@ class AdaTVAE(AdaGVAE):
         
         z3_ = z3.gather(1, kl_idx_1)
         z_loc_3_ = z_loc_3.gather(1, kl_idx_1)
-        z_logvar_3_ = z_logvar_3.gather(1, kl_idxkl_idx_1)
+        z_logvar_3_ = z_logvar_3.gather(1, kl_idx_1)
         # tc term 1 dkl(z1|prod(k)z3)
         tc_1 = self.total_correlation(z1, z_loc_1, z_logvar_1, z3_, z_loc_3_, z_logvar_3_)
         # tc term 2 dkl(z2|prod(k)z3)
@@ -312,7 +312,7 @@ class AdaTVAE(AdaGVAE):
         kl_3 = -0.5 * torch.sum(1 + z_logvar_3 - z_loc_2.pow(2) - z_logvar_3.exp(), 1).mean(0)
 
         tc, tc_1, tc_2 = self.triangle_factorisation(z1, z_loc_1, z_logvar_1, z2, z_loc_2, z_logvar_2, z3, z_loc_3, z_logvar_3)
-        loss = r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3 - tc
+        loss = r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3 - (2 * tc)
 
         return loss, r_1, r_2, r_3, kl_1, kl_2, kl_3, tc, tc_1, tc_2
 
