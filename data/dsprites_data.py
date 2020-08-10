@@ -38,8 +38,8 @@ class DSpritesIIDPairs(Dataset):
 
     def latent_to_index(self, latents):
         return np.dot(latents, self.latents_bases).astype(int)
-    
     # legacy single-observation sampling
+    
     def sample_latent(self):
         samples = np.zeros((self.size, self.latents_sizes.size))
         for lat_i, lat_size in enumerate(self.latents_sizes):
