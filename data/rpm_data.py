@@ -108,29 +108,23 @@ class PGM(IterableDataset):
 
 
 class Relation(Object):
-    def __init__(self, num_factors, rows=3, cols=3):
-        self.num_factors = num_factors
-        self.rows = rows
-        self.cols = cols
-    
     @staticmethod
     def consistent(matrix):
         raise NotImplementedError()
     
     @staticmethod
-    def sample(factor_size):
+    def sample(factor_size, size):
         # factor_size - number of possible value for ground truth factor
         # samples a (batch_size, rows, cols, 1) tensor from factors
         raise NotImplementedError()
         
 
 class ANDRelation(Relation):
-    
     @staticmethod
     def consistent(matrix):
     
     @staticmethod
-    def sample(factor_size):
+    def sample(factor_size, size):
 
 class RNDRelation(Relation):
     
@@ -138,7 +132,7 @@ class RNDRelation(Relation):
     def consistent(matrix):
     
     @staticmethod
-    def sample(factor_size):
+    def sample(factor_size, size):
 
 # class IterableDSpritesIIDPairs(IterableDataset):
 #     def __init__(self, dsprites_loader, size=300000, batch_size=64, k=None):
