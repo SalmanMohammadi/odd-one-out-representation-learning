@@ -104,8 +104,7 @@ class PGM(IterableDataset):
         self.matrices = np.zeros(batch_size, )
         
 
-    def __iter__(self):
-
+    def __iter__(self)I
 
 class Relation(Object):
     @staticmethod
@@ -122,7 +121,7 @@ class Relation(Object):
 class ANDRelation(Relation):
     @staticmethod
     def consistent(matrix):
-    
+        
     @staticmethod
     def sample(factor_size, size):
 
