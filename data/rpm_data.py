@@ -85,53 +85,100 @@ class ColourDSprites(IterableDataset):
 
         return colours, samples
 
-class PGM(IterableDataset):
-    def __init__(self, dataset, relations_p, num_batches, relation_types=[ANDRelation, RNDRelation],
-                rows=3, cols=3):
-        self.dataset = dataset
-        self.num_relations = 1 + np.random.choice(len(relations_p), p=relations_p)
-        self.relation_types = dict(enumerate(relation_types))
-        self.rows=3
-        self.cols=3
 
+class QuantizedColourDSprites(QuantizedColourDSprites):
+    
+    def 
+
+class PGM(IterableDataset):
+    def __init__(self, dataset, num_batches, relations_p=[1/3]*3, 
+                rows=3, cols=3, factors=[5, 6, 3, 6, 32, 32]):
+        self.dataset = dataset
+        self.size = num_batches
+        self.relations_p = relations_p
+        self.rows = 3
+        self.cols = 3
+        self.factors = np.array(factors)
+
+    def sample_no_relation(self, factor, size):
+        # sample order of factors in matrix
+        idx_duplicate = np.zeros((size*2, 3), dtype=int)
+        rand_ = np.random.randint(3, size=size*2)
+        idx_duplicate[range(size*2), rand_] = 1
+
+        # vectorized random sampling without replacement trick
+        idx = np.random.rand(size*2, factor).argpartition(2,axis=1)[:,:2]
+        out = np.take(range(factor), idx)
+        out = out[np.array([range(size*2)]*3).T, idx_duplicate].reshape(size,2,3)
+        
+        # sample final rows
+        final = np.expand_dims(np.random.choice(factor, size=(size, 3)), 1)
+        matrix = np.hstack((out, final))
+        return matrix
+
+    def sample_constant_relation(self, factor, size):
+        matrix = np.zeros((size, 3, 3))
+        for i in range(3):
+            matrix[:, i, :] = np.array([np.random.choice(factor, size=size)]*3).T
+
+        return matrix
         
     def sample(self):
-        # sample a (batch_size, num_relations) array of AND relationship indicies
-        relations_idx = np.array([np.random.choice(self.latents_sizes.size, size=num_relations, replace=False) 
-                                for _ in range(self.batch_size)])
-        relations = np.array([[RNDRelation]*dataset.factors_sizes.size]*self.batch_size)
-        relations[range(self.batch_size), relations_idx.T] = ANDRelation
-        self.matrices = np.zeros(batch_size, )
+        # sample a (batch_size, 3, 3, num_relations) array of AND relationship indicies
+        # and a (batch_size, 5, num_relations) array of hard alternative answers
+        # **** TODO URGENT ***
+        # change num_relations to be per-sample in batch rather than constant over a batch
+        num_relations = 1 + np.random.choice(3, p=self.relations_p)
+        relations_idx = np.hstack([np.random.rand(self.size, len(factors)).argpartition(1,axis=1)[:,:1] 
+                                for _ in range(num_relations)])
+        matrix = np.zeros((batch_size, 3, 3, len(self.factors)), dtype=int)
+        for j, factor in enumerate(self.factors):
+            idx_ = np.any([relations_idx[:,i] == j for i in range(num_relations)], axis=0)
+            matrix[idx_, :, :, j] = self.sample_constant_relation(factor, idx_.sum())
+            matrix[(~idx_), :, :, j] = self.sample_no_relation(factor, (~idx_).sum())
+
+        # todo sample x
+
+        other_solutions = np.zeros((batch_size, 5, len(factors)), dtype=int)
+        for i in range(5):
+            other_solutions[:, i] = self.modify_solutions(matrix)
+
+        return matrix, other_solutions
+
+    def modify_solutions(self, matrix):
+        alt_mat = np.copy(matrix)
+        init_solutions = np.copy(matrix[:, -1, -1, :])
+        m_relations_idx = relations_idx[range(self.size), np.random.randint(num_relations, size=batch_size)]
+        idx = np.array(range(self.size))
+        new_solutions = np.zeros((self.size, 6))
+        # sample new fixed random factor per item in batch
+        while np.any(idx):
+            factors_ = np.hstack([np.random.rand(len(idx), factor).argpartition(1,axis=1)[:,:1] 
+                                    for factor in factors])
+            new_solutions[idx] = factors_[m_relations_idx[idx]]
+            idx = new_solutions == init_solutions[idx, m_relations_idx[idx]]
         
+        init_solutions[m_relations_idx] = new_solutions
+        # resample non active relations
+        for j, factor in enumerate(factors):
+            # get indices for constant relations for the current batch
+            idx = np.any([relations_idx[:,i] == j for i in range(num_relations)], axis=0)
+            # ensure ~idx_ are of the form aaa or abc w.r.t alt_mat[~idx_, -1, :-1, j]
+            # idx for all non constant relations of the form aa become aaa
+            same_idx = np.logical_and(idx, alt_mat[:, -1, 0, j] == alt_mat[:, -1, 1, j])
+            init_solutions[same_idx,  j] = alt_mat[same_idx, -1, 1, j]
+            # idx for all non constant relations of the form ab/ba become abc/bac               
+            # ensure it's randomly sampled and doesnt include alt_mat[~idx, -1, :-1, j]
+            factor_set = np.array([range(factor)]*np.sum(~same_idx))
+            factor_samples = np.ones((np.sum(~same_idx), factor), dtype=bool)
+            factor_samples[range(np.sum(~same_idx)), alt_mat[~same_idx, -1, :-1, j].T] = 0
+            factor_set = factor_set[factor_samples]#.reshape(len(idx), factor-2)
+            init_solutions[~same_idx, j] = factor_set[np.random.choice(factor-2, size=np.sum(~same_idx))]
+        return init_solutions
 
-    def __iter__(self)I
 
-class Relation(Object):
-    @staticmethod
-    def consistent(matrix):
-        raise NotImplementedError()
-    
-    @staticmethod
-    def sample(factor_size, size):
-        # factor_size - number of possible value for ground truth factor
-        # samples a (batch_size, rows, cols, 1) tensor from factors
-        raise NotImplementedError()
-        
-
-class ANDRelation(Relation):
-    @staticmethod
-    def consistent(matrix):
-        
-    @staticmethod
-    def sample(factor_size, size):
-
-class RNDRelation(Relation):
-    
-    @staticmethod
-    def consistent(matrix):
-    
-    @staticmethod
-    def sample(factor_size, size):
+    def __iter__(self):
+        pass
 
 # class IterableDSpritesIIDPairs(IterableDataset):
 #     def __init__(self, dsprites_loader, size=300000, batch_size=64, k=None):

@@ -21,6 +21,8 @@ class CNNEmbedder(nn.Module):
         self.b3 = nn.BatchNorm2d(64)
         self.c4 = nn.Conv2d(64, 64, kernel_size=3, stride=2)
         self.b4 = nn.BatchNorm2d(64)
+
+        # self.fc1 = nn.Linear()
         
 
     def forward(self, x):
