@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision.transforms as transforms
 import models
-from models import AdaGVAE, TVAE, AdaTVAE
+from models.models_disentanglement import AdaGVAE, TVAE, AdaTVAE
 from data import dsprites_data as dsprites
 import matplotlib.pyplot as plt
 from eval import dci
