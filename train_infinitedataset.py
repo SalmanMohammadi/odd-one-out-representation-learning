@@ -4,7 +4,8 @@ import torchvision.datasets as dset
 import torch.nn as nn
 import torch.optim as optim
 import torchvision.transforms as transforms
-import models
+import models.models_disentanglement as models
+import numpy as np
 from models.models_disentanglement import AdaGVAE, TVAE, AdaTVAE
 from data import dsprites_data as dsprites
 import matplotlib.pyplot as plt
@@ -12,6 +13,8 @@ from eval import dci
 from torch.utils.tensorboard import SummaryWriter 
 
 CUDA = torch.device('cuda')
+
+np.random.seed(0)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model", type=str)

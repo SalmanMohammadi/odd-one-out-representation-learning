@@ -8,7 +8,7 @@ from torch.utils.tensorboard import SummaryWriter
 import sys
 sys.path.append('../')
 import models
-from models import AdaGVAE, batch_sample_latents
+from models.models_disentanglement import AdaGVAE, batch_sample_latents
 from data import dsprites_data as dsprites
 from data.dsprites_data import IterableDSPritesIID
 

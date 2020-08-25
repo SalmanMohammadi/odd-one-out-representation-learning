@@ -341,16 +341,15 @@ def train_steps(model, dataset, optimizer, num_steps=300000, device=CUDA,
 
         # train_loss += loss.item()
         # metrics_mean.append([x.item() for x in metrics])
-        metrics = [x/64 for x in metrics]
         if batch_id % log_interval == 0 and verbose:
             print('Train step: {}, loss: {}'.format(
-                batch_id, loss.item() / 64))
+                batch_id, loss.item() ))
             if metrics_labels:
                 print(", ".join(list(map(lambda x: "%s: %.5f" % x, zip(metrics_labels, metrics)))))
             else:
                 print(metrics)
         if batch_id % write_interval == 0 and writer:
-            writer.add_scalar('train/loss', loss.item() / 64, batch_id)
+            writer.add_scalar('train/loss', loss.item() , batch_id)
             if metrics_labels:
                 for label, metric in zip(metrics_labels, metrics):
                     writer.add_scalar('train/'+label, metric, batch_id)
