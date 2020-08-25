@@ -14,6 +14,7 @@ CUDA = torch.device('cuda')
 class CNNEmbedder(nn.Module):
     def __init__(self, n_channels=3):
         super().__init__()
+        self.z_dim = 256
         self.c1 = nn.Conv2d(n_channels, 32, kernel_size=4, stride=2)
         self.b1 = nn.BatchNorm2d(32)
         self.c2 = nn.Conv2d(32, 32, kernel_size=4, stride=2)
@@ -44,14 +45,18 @@ class RelationNetwork(nn.Module):
         return x
     
 class WReN(nn.Module):
-    def __init__(self, n_channels=3, embedding_dim=256, embedder=CNNEmbedder):
+    def __init__(self, n_channels=3, embedder=CNNEmbedder):
         super().__init__()
-        self.embedder = embedder()
+        if embedder == CNNEmbedder:
+            self.embedder = embedder()
+        else:
+            self.embedder = embedder
 
+        self.embedding_size = self.embedder.z_dim
         self.relation_net = RelationNetwork()
 
         # scores embeddings
-        self.fc1 = nn.Linear(512, 256)
+        self.fc1 = nn.Linear(self.embedding_size*2, 256)
         self.fc2 = nn.Linear(256, 256)
         self.fc3 = nn.Linear(256, 1)
         self.dropout = nn.Dropout(p=0.5)
@@ -70,16 +75,16 @@ class WReN(nn.Module):
         # context - (batch_size, 8, 3, 64, 64)
         # answers - (batch_size, 6, 3, 64, 64)
         
-        context_embeddings = self.embedder(context).view(-1, 256)
-        answer_embeddings = self.embedder(answers).view(-1, 256)
+        context_embeddings = self.embedder(context).view(-1, self.embedding_size)
+        answer_embeddings = self.embedder(answers).view(-1, self.embedding_size)
 
-        context_embeddings = context_embeddings.reshape(-1, 8, 256)
-        answer_embeddings = answer_embeddings.reshape(-1, 6, 256)
+        context_embeddings = context_embeddings.reshape(-1, 8, self.embedding_size)
+        answer_embeddings = answer_embeddings.reshape(-1, 6, self.embedding_size)
         paired_embeddings = self.pair_context_answer_embeddings(context_embeddings, answer_embeddings)
 
         # g_theta
-        rn_paired_embeddings = self.relation_net(paired_embeddings.view(-1, 512))
-        rn_paired_embeddings = rn_paired_embeddings.view(-1, 6, 8, 512).sum(-2)
+        rn_paired_embeddings = self.relation_net(paired_embeddings.view(-1, self.embedding_size*2))
+        rn_paired_embeddings = rn_paired_embeddings.view(-1, 6, 8, self.embedding_size*2).sum(-2)
 
         # f_theta
         scores = self.score_embeddings(rn_paired_embeddings).squeeze()#.sum(-1)
