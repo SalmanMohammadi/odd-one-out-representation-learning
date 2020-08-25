@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
+from .dsprites_data import IterableDSpritesIIDTriplets
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 
 OBJECT_COLORS = np.array(
@@ -72,6 +73,8 @@ class ColourDSprites(IterableDataset):
             samples[:, lat_i] = np.random.randint(lat_size, size=self.batch_size)
 
         return colours, samples
+
+class ColourDSpritesTriplets()
 
 class QuantizedColourDSprites():
     def __init__(self, dsprites_loader, factors=[1, 2, 4, 5], factors_sizes=[5, 6, 3, 3, 4, 4]):
@@ -249,6 +252,16 @@ def get_datasets(train_sizes=(300000, 100000), test_sizes=(10000, 10000),
 
     return (train_disentanglement, test_disentanglement), (train_abstract_reasoning, test_abstract_reasoning)
 
+def get_dsprites(train_size=300000, test_size=10000, batch_size=64, dataset=ColourDSprites):
+    """
+    Returns train and test DSprites dataset.
+    """
+    dsprites_loader = DSpritesLoader(npz_path='./data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
+    train_data = DataLoader(dataset(size=train_size, dsprites_loader=dsprites_loader, k=k),
+                            batch_size=batch_size)#, pin_memory=True, num_workers=16)
+    test_data = DataLoader(dataset(size=test_size, dsprites_loader=dsprites_loader, k=k),
+                            batch_size=batch_size)#, pin_memory=True, num_workers=16)                    
+    return train_data, test_data
 
 def show_task(matrix, alternative_solutions, y):
     fig, axes = plt.subplots(3, 3)
@@ -261,8 +274,6 @@ def show_task(matrix, alternative_solutions, y):
         for j in range(3):
             axes[i][j].imshow(alternative_solutions[i][j].T)
     plt.show()
-
-
 
 # class IterableDSpritesIIDPairs(IterableDataset):
 #     def __init__(self, dsprites_loader, size=300000, batch_size=64, k=None):

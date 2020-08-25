@@ -7,6 +7,7 @@ import torchvision.transforms as transforms
 import models.models_disentanglement as models
 import numpy as np
 from models.models_disentanglement import AdaGVAE, TVAE, AdaTVAE
+from data import rpm_data as rpm
 from data import dsprites_data as dsprites
 import matplotlib.pyplot as plt
 from eval import dci
@@ -15,7 +16,6 @@ from torch.utils.tensorboard import SummaryWriter
 CUDA = torch.device('cuda')
 
 np.random.seed(0)
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--model", type=str)
 parser.add_argument("--train", action="store_true")
@@ -23,9 +23,9 @@ parser.add_argument("--test", action="store_true")
 parser.add_argument("--save", action="store_true")
 parser.add_argument("--steps", type=int, default=300000) 
 parser.add_argument("--experiment_name", type=str, default='')
+parser.add_argument("--dataset", type=str)
 parser.add_argument("--experiment_id", type=int, default=0)
 args = parser.parse_args()
-
 if args.train and args.test:
     parser.error("Can't have both --train and --test")
 
@@ -36,6 +36,15 @@ experiment_id = '/' + str(args.experiment_id)
 experiment_name = '/' + args.experiment_name if args.experiment_name else ''
 model_path = 'tmp/' + args.model + '/' + experiment_name + experiment_id
 
+datasets = {
+    'iid': dsprites.IterableDSPritesIID,
+    'iid_pairs': dsprites.IterableDSpritesIIDPairs,
+    'iid_triplets': dsprites.IterableDSpritesIIDTriplets,
+    'colour': rpm.ColourDSprites
+}
+if args.dataset not in datasets.keys():
+    parser.error("Dataset should be one of: " + ", ".join(datasets.keys()))
+
 label_dict = {
     'adatvae': ["recon_1", "recon_2", "recon_3", "kl_1", "kl_2", "kl_3", "tc", "tc_1", "tc_2"],
     'tvae': ["recon_1", "recon_2", "recon_3", "kl_1", "kl_2", "kl_3", "y", "y_"],
@@ -43,9 +52,16 @@ label_dict = {
     'adagvae': ["recon_1", "recon_2", "kl_1", "kl_2"],
     # : ["recon_1", "kl_1"]
 }
+
 labels = label_dict[args.model]
-train_data, test_data = dsprites.get_dsprites(train_size=args.steps, test_size=10000, batch_size=1, k=1,
-                                            dataset=dsprites.IterableDSpritesIIDTriplets)
+if args.dataset == 'colour':
+    train_data, test_data = rpm.get_dsprites(train_size=args.steps, test_size=10000, batch_size=1,
+                                            dataset=datasets[args.dataset])
+else:
+    train_data, test_data = dsprites.get_dsprites(train_size=args.steps, test_size=10000, batch_size=1, k=1,
+                                            dataset=datasets[args.dataset])
+
+exit()
 model_dict = {'adagvae': AdaGVAE, 'tvae': TVAE, 'adatvae': AdaTVAE}
 vae = model_dict[args.model](n_channels=1)
 writer = SummaryWriter(log_dir=model_path)

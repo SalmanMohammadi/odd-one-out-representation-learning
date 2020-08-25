@@ -270,7 +270,7 @@ def get_dsprites(train_size=300000, test_size=10000, batch_size=64, k=None, data
 if __name__ == "__main__":
     testing_infinite = True
     testing_pairs = False
-    if testing_infinite:
+    if testing_infinite:IterableDSpritesIIDTriplets
         if testing_pairs:
             dsprites_loader = DSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
             data = DataLoader(IterableDSpritesIIDPairs(dsprites_loader=dsprites_loader, batch_size=64),
