@@ -10,8 +10,8 @@ from models.models_disentanglement import AdaGVAE, TVAE, AdaTVAE
 from data import rpm_data as rpm
 from data import dsprites_data as dsprites
 import matplotlib.pyplot as plt
-from eval import dci
-from torch.utils.tensorboard import SummaryWriter 
+# from eval import dci
+# from torch.utils.tensorboard import SummaryWriter 
 
 CUDA = torch.device('cuda')
 
@@ -40,7 +40,7 @@ datasets = {
     'iid': dsprites.IterableDSPritesIID,
     'iid_pairs': dsprites.IterableDSpritesIIDPairs,
     'iid_triplets': dsprites.IterableDSpritesIIDTriplets,
-    'colour': rpm.ColourDSprites
+    'colour_triplets': rpm.ColourDSpritesTriplets
 }
 if args.dataset not in datasets.keys():
     parser.error("Dataset should be one of: " + ", ".join(datasets.keys()))
@@ -52,19 +52,20 @@ label_dict = {
     'adagvae': ["recon_1", "recon_2", "kl_1", "kl_2"],
     # : ["recon_1", "kl_1"]
 }
-
-labels = label_dict[args.model]
-if args.dataset == 'colour':
-    train_data, test_data = rpm.get_dsprites(train_size=args.steps, test_size=10000, batch_size=1,
-                                            dataset=datasets[args.dataset])
-else:
-    train_data, test_data = dsprites.get_dsprites(train_size=args.steps, test_size=10000, batch_size=1, k=1,
-                                            dataset=datasets[args.dataset])
-
-exit()
 model_dict = {'adagvae': AdaGVAE, 'tvae': TVAE, 'adatvae': AdaTVAE}
-vae = model_dict[args.model](n_channels=1)
-writer = SummaryWriter(log_dir=model_path)
+
+vae = None
+labels = label_dict[args.model]
+if args.dataset == 'colour_triplets':
+    train_data, test_data = rpm.get_dsprites(train_size=args.steps, test_size=10000, batch_size=64,
+                                            dataset=datasets[args.dataset])
+    vae = model_dict[args.model](n_channels=3)
+else:
+    train_data, test_data = dsprites.get_dsprites(train_size=args.steps, test_size=10000, batch_size=64, k=1,
+                                            dataset=datasets[args.dataset])
+    vae = model_dict[args.model](n_channels=1)
+
+writer = None#SummaryWriter(log_dir=model_path)
 if not args.test:
     opt = optim.Adam(vae.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-8)
     models.train_steps(vae, train_data, opt, verbose=True, writer=writer,

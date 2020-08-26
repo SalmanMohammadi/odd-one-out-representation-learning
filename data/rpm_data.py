@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
-from dsprites_data import IterableDSpritesIIDTriplets
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 
 OBJECT_COLORS = np.array(
@@ -74,7 +73,7 @@ class ColourDSprites(IterableDataset):
 
         return colours, samples
 
-class ColourDSpritesTriplets(ColourDSprites):
+class ColourDSpritesTriplets(IterableDataset):
     def __init__(self, dsprites_loader, size=300000, batch_size=64, k=1):
         # 0 - background color (5 different values)
         # 1 - object color (6 different values)
@@ -110,22 +109,21 @@ class ColourDSpritesTriplets(ColourDSprites):
     
     def sample(self):
         z_1, z_2, z_3, k_idxs = self.sample_latent_triplets()
-        print(k_idxs)
         X1, X2, X3 = map(self.latent_to_observations, (z_1, z_2, z_3))
         
         # randomly sample positions
         positions = np.random.rand(self.batch_size, 3).argpartition(2,axis=1)
-        new_x = np.zeros((3, self.batch_size, 3, 64, 64))
-        new_x[:, positions[:, 0]] = X1
-        new_x[:, positions[:, 1]] = X2
-        new_x[:, positions[:, 2]] = X3
-        return *map(np.squeeze, np.split(new_x, 3)), positions
-        # X1, X2, X3 = np.split(new_x, 3)
-        # X1 = np.squeeze(X1)
-        # X2 = np.squeeze(X2)
-        # X3 = np.squeeze(X3)
-        # X1, X2, X3 = map(np.squeeze, np.split(new_x, 3))
-        # return X1, X2, X3, ()#positions
+        new_x = np.zeros((self.batch_size, 3, 64, 64, 3))
+        new_x[range(self.batch_size), :, :, :, positions[:, 0]] = X1
+        new_x[range(self.batch_size), :, :, :, positions[:, 1]] = X2
+        new_x[range(self.batch_size), :, :, :, positions[:, 2]] = X3
+
+        X1, X2, X3 = map(np.squeeze, np.split(new_x, 3, axis=-1))
+        X1 = torch.tensor(X1, dtype=torch.float32)
+        X2 = torch.tensor(X2, dtype=torch.float32)
+        X3 = torch.tensor(X3, dtype=torch.float32)
+        positions = torch.tensor(positions, dtype=torch.long)
+        return X1, X2, X3, positions
 
     def sample_latent_triplets(self):
         z_1 = np.zeros((self.batch_size, self.factors_sizes.size))
@@ -344,11 +342,11 @@ def get_dsprites(train_size=300000, test_size=10000, batch_size=64, k=1, dataset
     """
     Returns train and test DSprites dataset.
     """
-    dsprites_loader = DSpritesLoader(npz_path='./data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
-    train_data = DataLoader(dataset(size=train_size, dsprites_loader=dsprites_loader, k=k),
-                            batch_size=batch_size)#, pin_memory=True, num_workers=16)
-    test_data = DataLoader(dataset(size=test_size, dsprites_loader=dsprites_loader, k=k),
-                            batch_size=batch_size)#, pin_memory=True, num_workers=16)                    
+    dsprites_loader = ColourDSpritesLoader(npz_path='./data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
+    train_data = DataLoader(dataset(size=train_size, dsprites_loader=dsprites_loader, k=k, batch_size=batch_size),
+                            batch_size=1)#, pin_memory=True, num_workers=16)
+    test_data = DataLoader(dataset(size=test_size, dsprites_loader=dsprites_loader, k=k, batch_size=batch_size),
+                            batch_size=1)#, pin_memory=True, num_workers=16)                    
     return train_data, test_data
 
 def show_task(matrix, alternative_solutions, y):

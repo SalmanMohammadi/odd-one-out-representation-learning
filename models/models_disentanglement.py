@@ -169,17 +169,23 @@ class TVAE(AdaGVAE):
         return x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3
 
     def batch_forward(self, data, device):
-        x1, x2, x3 = data
-
-        x1 = x1.to(device).permute(1,0,2,3)
-        x2 = x2.to(device).permute(1,0,2,3)
-        x3 = x3.to(device).permute(1,0,2,3)
+        x1, x2, x3, y = data
+        x1 = x1.to(device).squeeze()
+        x2 = x2.to(device).squeeze()
+        x3 = x3.to(device).squeeze()
+        y = y.to(device).squeeze()
 
         x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3 = self(x1, x2, x3)
 
-        return self.loss(x1, x2, x3, x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3)
+        return self.loss(x1, x2, x3, x1_, x2_, x3_, 
+                            z_loc_1, z_logvar_1, 
+                            z_loc_2, z_logvar_2, 
+                            z_loc_3, z_logvar_3, y)
 
-    def loss(self, x1, x2, x3, x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3):
+    def loss(self, x1, x2, x3, x1_, x2_, x3_, 
+                z_loc_1, z_logvar_1, 
+                z_loc_2, z_logvar_2, 
+                z_loc_3, z_logvar_3, pos):
         # returns total_loss, recon_1, recon_2, recon_3, kl_1, kl_2, kl_3
 
         r_1 = nn.functional.binary_cross_entropy_with_logits(x1_, x1, reduction='sum').div(64)
@@ -192,12 +198,17 @@ class TVAE(AdaGVAE):
         
         loss = r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3
 
+        stacked_loc = torch.stack((z_loc_1, z_loc_2, z_loc_3), dim=-1)
+        loc_1_ = stacked_loc[range(z_loc_1.shape[0]), :, pos[:, 0]]
+        loc_2_ = stacked_loc[range(z_loc_1.shape[0]), :, pos[:, 1]]
+        loc_3_ = stacked_loc[range(z_loc_1.shape[0]), :, pos[:, 2]]
+
         # d(x1,x2)
-        d_1 = torch.norm(z_loc_1 - z_loc_2, 2, 1, True)
+        d_1 = torch.norm(loc_1_ - loc_2_, 2, 1, True)
         # d(x1, x3)
-        d_2 = torch.norm(z_loc_1 - z_loc_3, 2, 1, True)
+        d_2 = torch.norm(loc_1_ - loc_3_, 2, 1, True)
         # d(x2, x3)
-        d_3 = torch.norm(z_loc_2 - z_loc_3, 2, 1, True)
+        d_3 = torch.norm(loc_2_ - loc_3_, 2, 1, True)
         # log p(y|d(x1,x2)^2 - d(x1,x3)^2)
         # fully connected nn layer 
         y_1 = self.fc_disc(d_1.pow(2) - d_2.pow(2))
