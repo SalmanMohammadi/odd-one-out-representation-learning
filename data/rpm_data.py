@@ -104,7 +104,16 @@ class ColourDSpritesTriplets(ColourDSprites):
     
     def sample(self):
         z_1, z_2, z_3, k_idxs = self.sample_latent_triplets()
-        return tuple(map(self.latent_to_observations, (z_1, z_2, z_3)))
+        X1, X2, X3 = map(self.latent_to_observations, (z_1, z_2, z_3))
+        
+        # randomly sample whether x3 is in position 1,2, or 3
+        positions = np.random.choice(3, size=(3, self.batch_size), replace=False)
+        new_x = np.zeros((3, self.batch_size, 3, 64, 64))
+        new_x[positions[:, 0]] = X1
+        new_x[positions[:, 1]] = X2
+        new_x[positions[:, 2]] = X3
+
+        return np.split(new_x, 3), positions
 
     def sample_latent_triplets(self):
         z_1 = np.zeros((self.batch_size, self.factors_sizes.size))
@@ -123,8 +132,8 @@ class ColourDSpritesTriplets(ColourDSprites):
         else:
             k_samples = np.ones((self.batch_size), dtype=int) * self.k
 
-        z_2 = np.array(z_1)
-        z_3 = np.array(z_1)
+        z_2 = np.copy(z_1)
+        z_3 = np.copy(z_1)
         for i, (idx, idx_1) in enumerate(zip(k_idxs[:, None], k_idxs_1)):
             for j, lat_size in zip(idx, self.factors_sizes[idx]):
                 z_2[i, j] = np.random.randint(lat_size)
@@ -181,7 +190,6 @@ class QuantizedColourDSprites():
 
         X = self.dsprites_loader.X[self.latent_to_index(new_z)]
         return self.colourize(c, X)
-
 
     def colourize(self, c, X):
         c = c.astype(int)
@@ -366,8 +374,9 @@ if __name__ == '__main__':
     # show_task(x[0], x_[0], y[0])
 
     dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
-    data = DataLoader(ColourDSpritesTriplets(dsprites_loader=dsprites_loader, batch_size=5), batch_size=1)
-    x1, x2, x3 = next(iter(data))
+    data = DataLoader(ColourDSpritesTriplets(dsprites_loader=dsprites_loader, batch_size=5, k=1), batch_size=1)
+    x1, x2, x3, pos = next(iter(data))
+    print("pos", pos)
     print(x1.shape)
     x1 = x1.reshape(5, 3, 64, 64)
     x2 = x2.reshape(5, 3, 64, 64)
