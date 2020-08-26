@@ -10,12 +10,11 @@ from models.models_disentanglement import AdaGVAE, TVAE, AdaTVAE
 from data import rpm_data as rpm
 from data import dsprites_data as dsprites
 import matplotlib.pyplot as plt
-# from eval import dci
-# from torch.utils.tensorboard import SummaryWriter 
+from eval import dci
+from torch.utils.tensorboard import SummaryWriter 
 
 CUDA = torch.device('cuda')
 
-np.random.seed(0)
 parser = argparse.ArgumentParser()
 parser.add_argument("--model", type=str)
 parser.add_argument("--train", action="store_true")
@@ -26,6 +25,7 @@ parser.add_argument("--experiment_name", type=str, default='')
 parser.add_argument("--dataset", type=str)
 parser.add_argument("--experiment_id", type=int, default=0)
 args = parser.parse_args()
+np.random.seed(args.experiment_id)
 if args.train and args.test:
     parser.error("Can't have both --train and --test")
 
@@ -65,7 +65,7 @@ else:
                                             dataset=datasets[args.dataset])
     vae = model_dict[args.model](n_channels=1)
 
-writer = None#SummaryWriter(log_dir=model_path)
+writer = SummaryWriter(log_dir=model_path)
 if not args.test:
     opt = optim.Adam(vae.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-8)
     models.train_steps(vae, train_data, opt, verbose=True, writer=writer,

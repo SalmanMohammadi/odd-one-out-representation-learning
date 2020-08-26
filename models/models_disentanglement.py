@@ -187,7 +187,6 @@ class TVAE(AdaGVAE):
                 z_loc_2, z_logvar_2, 
                 z_loc_3, z_logvar_3, pos):
         # returns total_loss, recon_1, recon_2, recon_3, kl_1, kl_2, kl_3
-
         r_1 = nn.functional.binary_cross_entropy_with_logits(x1_, x1, reduction='sum').div(64)
         r_2 = nn.functional.binary_cross_entropy_with_logits(x2_, x2, reduction='sum').div(64)
         r_3 = nn.functional.binary_cross_entropy_with_logits(x3_, x3, reduction='sum').div(64)
@@ -202,7 +201,6 @@ class TVAE(AdaGVAE):
         loc_1_ = stacked_loc[range(z_loc_1.shape[0]), :, pos[:, 0]]
         loc_2_ = stacked_loc[range(z_loc_1.shape[0]), :, pos[:, 1]]
         loc_3_ = stacked_loc[range(z_loc_1.shape[0]), :, pos[:, 2]]
-
         # d(x1,x2)
         d_1 = torch.norm(loc_1_ - loc_2_, 2, 1, True)
         # d(x1, x3)
