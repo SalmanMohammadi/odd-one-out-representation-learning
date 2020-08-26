@@ -76,6 +76,13 @@ class ColourDSprites(IterableDataset):
 
 class ColourDSpritesTriplets(ColourDSprites):
     def __init__(self, dsprites_loader, size=300000, batch_size=64, k=1):
+        # 0 - background color (5 different values)
+        # 1 - object color (6 different values)
+        # 2 - shape (3 different values)
+        # 3 - scale (6 different values)
+        # 4 - orientation (40 different values)
+        # 5 - position x (32 different values)
+        # 6 - position y (32 different values)
         self.k = k
         self.batch_size = batch_size
         self.num_batches = size
@@ -87,7 +94,6 @@ class ColourDSpritesTriplets(ColourDSprites):
         # An array to convert latent indices to indices in imgs
         self.latents_bases = np.concatenate((self.latents_sizes[::-1].cumprod()[::-1][1:],
                                                 np.array([1,])))
-
     def __iter__(self):
         for i in range(self.num_batches):
             yield self.sample()
@@ -100,20 +106,26 @@ class ColourDSpritesTriplets(ColourDSprites):
     
     @property
     def factors_sizes(self):
-        return np.array([BACKGROUND_COLORS.shape[0], OBJECT_COLORS.shape[0]] + list(self.latents_sizes))
+        return np.array([BACKGROUND_COLORS.shape[0], OBJECT_COLORS.shape[0]] + list(self.latents_sizes[1:]))
     
     def sample(self):
         z_1, z_2, z_3, k_idxs = self.sample_latent_triplets()
+        print(k_idxs)
         X1, X2, X3 = map(self.latent_to_observations, (z_1, z_2, z_3))
         
-        # randomly sample whether x3 is in position 1,2, or 3
-        positions = np.random.choice(3, size=(3, self.batch_size), replace=False)
+        # randomly sample positions
+        positions = np.random.rand(self.batch_size, 3).argpartition(2,axis=1)
         new_x = np.zeros((3, self.batch_size, 3, 64, 64))
-        new_x[positions[:, 0]] = X1
-        new_x[positions[:, 1]] = X2
-        new_x[positions[:, 2]] = X3
-
-        return np.split(new_x, 3), positions
+        new_x[:, positions[:, 0]] = X1
+        new_x[:, positions[:, 1]] = X2
+        new_x[:, positions[:, 2]] = X3
+        return *map(np.squeeze, np.split(new_x, 3)), positions
+        # X1, X2, X3 = np.split(new_x, 3)
+        # X1 = np.squeeze(X1)
+        # X2 = np.squeeze(X2)
+        # X3 = np.squeeze(X3)
+        # X1, X2, X3 = map(np.squeeze, np.split(new_x, 3))
+        # return X1, X2, X3, ()#positions
 
     def sample_latent_triplets(self):
         z_1 = np.zeros((self.batch_size, self.factors_sizes.size))
@@ -143,7 +155,7 @@ class ColourDSpritesTriplets(ColourDSprites):
 
     def latent_to_observations(self, latents):
         c, z = latents[:, :2], latents[:, 2:]
-        X = self.dsprites_loader.X[self.latent_to_index(z)]
+        X = self.dsprites_loader.X[self.latent_to_index(np.insert(z, 0, 0, axis=1))]
         return self.colourize(c, X)
 
     def colourize(self, c, X):

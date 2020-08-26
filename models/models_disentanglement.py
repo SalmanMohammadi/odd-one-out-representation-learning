@@ -91,7 +91,7 @@ class AdaGVAE(nn.Module):
 
         return x1_, x2_, z_loc_1, z_var_1, z_loc_2, z_var_2
 
-    def batch_forward(self, data, device):
+    def batch_forward(self, data, device=CUDA):
         x1, x2, _ = data
 
         x1 = x1.to(device).permute(1,0,2,3)
