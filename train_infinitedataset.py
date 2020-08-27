@@ -27,11 +27,14 @@ parser.add_argument("--experiment_id", type=int, default=0)
 parser.add_argument("--load", action="store_true")
 args = parser.parse_args()
 np.random.seed(args.experiment_id)
+
+model_dict = {'adagvae': AdaGVAE, 'tvae': TVAE, 'adatvae': AdaTVAE, 'vae': VAE}
+
 if args.train and args.test:
     parser.error("Can't have both --train and --test")
 
-if args.model not in ['adagvae', 'tvae', 'adatvae']:
-    parser.error("Specify model: one of 'adagva' or 'tvae'")
+if args.model not in model_dict.keys():
+    parser.error("Specify model: one of: " + ", ".join(model_dict.keys()))
 
 experiment_id = '/' + str(args.experiment_id)
 experiment_name = '/' + args.experiment_name if args.experiment_name else ''
@@ -50,12 +53,11 @@ if args.dataset not in datasets.keys():
 label_dict = {
     'adatvae': ["recon_1", "recon_2", "recon_3", "kl_1", "kl_2", "kl_3", "tc", "tc_1", "tc_2"],
     'tvae': ["recon_1", "recon_2", "recon_3", "kl_1", "kl_2", "kl_3", "y", "y_"],
-    'vae': ["recon", "kl"]
+    'vae': ["recon", "kl"],
     # 'tvae': ["recon_1", "recon_2", "recon_3", "kl_1", "kl_2", "kl_3"],
     'adagvae': ["recon_1", "recon_2", "kl_1", "kl_2"],
     # : ["recon_1", "kl_1"]
 }
-model_dict = {'adagvae': AdaGVAE, 'tvae': TVAE, 'adatvae': AdaTVAE, 'vae': VAE}
 
 vae = None
 labels = label_dict[args.model]

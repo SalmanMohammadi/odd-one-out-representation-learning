@@ -2,6 +2,7 @@ import math
 import torch
 import torchvision.datasets as dset
 import torch.nn as nn
+import torch.nn.functional as F
 import torchvision.transforms as transforms
 import torch.distributions as dist
 from itertools import islice
@@ -68,15 +69,16 @@ class VAE(nn.Module):
         z_loc, z_logvar = self.encoder(x)
         z = self.sample_log(z_loc, z_logvar)
         
-        x_ = self.decoder(x)
+        x_ = self.decoder(z)
 
         return x_, z_loc, z_logvar
     
     def batch_forward(self, data, device=CUDA):
-        data = data.to(device).squeeze()
-        x_, z_loc, z_logvar = self(data)
+        x, _ = data
+        x = x.to(device).squeeze()
+        x_, z_loc, z_logvar = self(x)
         
-        return self.loss(data, x_, z_loc, z_logvar)
+        return self.loss(x, x_, z_loc, z_logvar)
 
     def loss(self, x, x_, z_loc, z_logvar):
         r = F.binary_cross_entropy_with_logits(x_, x, reduction='sum').div(x.shape[0])

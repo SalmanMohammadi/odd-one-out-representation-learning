@@ -33,7 +33,7 @@ class ColourDSprites(IterableDataset):
         self.num_batches = size
         self.dsprites_loader = dsprites_loader
         self.metadata = self.dsprites_loader.metadata
-        self.latents_sizes = self.metadata['latents_sizes'][1:]
+        self.latents_sizes = self.metadata['latents_sizes']
         self.latents_bases = np.concatenate((self.latents_sizes[::-1].cumprod()[::-1][1:],
                                                 np.array([1,])))
 
@@ -364,40 +364,40 @@ def show_task(matrix, alternative_solutions, y):
 # class IterableDSpritesIIDPairs(IterableDataset):
 #     def __init__(self, dsprites_loader, size=300000, batch_size=64, k=None):
 if __name__ == '__main__':
-    # dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
-    # data = DataLoader(ColourDSprites(dsprites_loader=dsprites_loader),
-    #                                     batch_size=1)
-    # x = next(iter(data))[0]
-    # print(x.shape)
-    # fix, axes = plt.subplots(15, sharex=True, sharey=True)
-    # for i in range(15):
-    #     axes[i].imshow(x[i].T)
-    # plt.show()
-
-
-    # dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
-    # data = QuantizedColourDSprites(dsprites_loader=dsprites_loader)
-    # pgm_data = DataLoader(PGM(data, num_batches=300000, batch_size=32), batch_size=1)
-    # x, x_, y = next(iter(pgm_data))
-    # x, x_, y = x.squeeze(), x_.squeeze(), y.squeeze()
-    # print(x.shape)
-    # show_task(x[0], x_[0], y[0])
-
     dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
-    data = DataLoader(ColourDSpritesTriplets(dsprites_loader=dsprites_loader, batch_size=5, k=1), batch_size=1)
-    x1, x2, x3, pos = next(iter(data))
-    print("pos", pos)
-    print(x1.shape)
-    x1 = x1.reshape(5, 3, 64, 64)
-    x2 = x2.reshape(5, 3, 64, 64)
-    x3 = x3.reshape(5, 3, 64, 64)
-    fig, axes = plt.subplots(5, 3, sharex=True, sharey=True)
-    for i in range(5):
-        axes[i][0].imshow(x1[i].T, cmap='Greys_r')
-        axes[i][1].imshow(x2[i].T, cmap='Greys_r')
-        axes[i][2].imshow(x3[i].T, cmap='Greys_r')
-    axes[0][0].set_title("A")
-    axes[0][1].set_title("B")
-    axes[0][2].set_title("X")
-    fig.subplots_adjust()
+    data = DataLoader(ColourDSprites(dsprites_loader=dsprites_loader),
+                                        batch_size=1)
+    x = next(iter(data))[0][0]
+    print(x.shape)
+    fix, axes = plt.subplots(15, sharex=True, sharey=True)
+    for i in range(15):
+        axes[i].imshow(x[i].T)
     plt.show()
+
+
+    # # dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
+    # # data = QuantizedColourDSprites(dsprites_loader=dsprites_loader)
+    # # pgm_data = DataLoader(PGM(data, num_batches=300000, batch_size=32), batch_size=1)
+    # # x, x_, y = next(iter(pgm_data))
+    # # x, x_, y = x.squeeze(), x_.squeeze(), y.squeeze()
+    # # print(x.shape)
+    # # show_task(x[0], x_[0], y[0])
+
+    # dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
+    # data = DataLoader(ColourDSpritesTriplets(dsprites_loader=dsprites_loader, batch_size=5, k=1), batch_size=1)
+    # x1, x2, x3, pos = next(iter(data))
+    # print("pos", pos)
+    # print(x1.shape)
+    # x1 = x1.reshape(5, 3, 64, 64)
+    # x2 = x2.reshape(5, 3, 64, 64)
+    # x3 = x3.reshape(5, 3, 64, 64)
+    # fig, axes = plt.subplots(5, 3, sharex=True, sharey=True)
+    # for i in range(5):
+    #     axes[i][0].imshow(x1[i].T, cmap='Greys_r')
+    #     axes[i][1].imshow(x2[i].T, cmap='Greys_r')
+    #     axes[i][2].imshow(x3[i].T, cmap='Greys_r')
+    # axes[0][0].set_title("A")
+    # axes[0][1].set_title("B")
+    # axes[0][2].set_title("X")
+    # fig.subplots_adjust()
+    # plt.show()
