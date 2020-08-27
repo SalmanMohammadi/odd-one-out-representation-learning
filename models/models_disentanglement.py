@@ -49,6 +49,41 @@ class Decoder(nn.Module):
         x = self.c4(x)
         return x
 
+class VAE(nn.Module):
+    def __init__(self, z_dim=10, n_channels=3, use_cuda=True):
+        super().__init__()
+        # create the encoder and decoder networks
+        self.encoder = Encoder(z_dim, n_channels)
+        self.decoder = Decoder(z_dim, n_channels)
+
+        if use_cuda:
+            self.cuda()
+    
+    def sample_log(self, loc, logvar):
+        sig = torch.exp(0.5*logvar)
+        p_z = torch.randn_like(sig)
+        return loc + p_z*sig
+    
+    def forward(self, x):
+        z_loc, z_logvar = self.encoder(x)
+        z = self.sample_log(z_loc, z_logvar)
+        
+        x_ = self.decoder(x)
+
+        return x_, z_loc, z_logvar
+    
+    def batch_forward(self, data, device=CUDA):
+        data = data.to(device).squeeze()
+        x_, z_loc, z_logvar = self(data)
+        
+        return self.loss(data, x_, z_loc, z_logvar)
+
+    def loss(self, x, x_, z_loc, z_logvar):
+        r = F.binary_cross_entropy_with_logits(x_, x, reduction='sum').div(x.shape[0])
+        kl =  -0.5 * torch.sum(1 + z_logvar - z_loc.pow(2) - z_logvar.exp(), 1).mean(0)
+
+        return r+kl, r, kl
+
 class AdaGVAE(nn.Module): 
     # architecture from Locatello et. al. http://arxiv.org/abs/2002.02886
     def __init__(self, z_dim=10, n_channels=3, use_cuda=True, adaptive=True, k=None):
@@ -190,10 +225,10 @@ class TVAE(AdaGVAE):
         r_1 = nn.functional.binary_cross_entropy_with_logits(x1_, x1, reduction='sum').div(64)
         r_2 = nn.functional.binary_cross_entropy_with_logits(x2_, x2, reduction='sum').div(64)
         r_3 = nn.functional.binary_cross_entropy_with_logits(x3_, x3, reduction='sum').div(64)
-
+        
         kl_1 = -0.5 * torch.sum(1 + z_logvar_1 - z_loc_1.pow(2) - z_logvar_1.exp(), 1).mean(0)
         kl_2 = -0.5 * torch.sum(1 + z_logvar_2 - z_loc_2.pow(2) - z_logvar_2.exp(), 1).mean(0)
-        kl_3 = -0.5 * torch.sum(1 + z_logvar_3 - z_loc_2.pow(2) - z_logvar_3.exp(), 1).mean(0)
+        kl_3 = -0.5 * torch.sum(1 + z_logvar_3 - z_loc_3.pow(2) - z_logvar_3.exp(), 1).mean(0)
         
         loss = r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3
 
@@ -445,11 +480,11 @@ def test(model, dataset, verbose=True, device=CUDA, metrics_labels=None, writer=
 def batch_sample_latents(model, data, num_points, batch_size=16, device=CUDA):
     model.eval()
     latents = torch.zeros((num_points, 10))
-    labels = torch.zeros((num_points, 5))
+    labels = torch.zeros((num_points, 7))
     assert len(data.dataset) >= num_points
     with torch.no_grad():
         for i, (X, Z) in enumerate(islice(data, (num_points//batch_size)+1)):
-            X = X.reshape(batch_size, 1, 64, 64).to(device)
+            X = X.reshape(batch_size, 3, 64, 64).to(device)
             Z = Z.reshape(batch_size, -1).to(device)
             n = min(num_points - ((i) * batch_size), batch_size)
             latents[i*batch_size:(i*batch_size)+n, :] = model.batch_representation(X[:n])

@@ -6,7 +6,7 @@ import torch.optim as optim
 import torchvision.transforms as transforms
 import models.models_disentanglement as models
 import numpy as np
-from models.models_disentanglement import AdaGVAE, TVAE, AdaTVAE
+from models.models_disentanglement import AdaGVAE, TVAE, AdaTVAE, VAE
 from data import rpm_data as rpm
 from data import dsprites_data as dsprites
 import matplotlib.pyplot as plt
@@ -24,6 +24,7 @@ parser.add_argument("--steps", type=int, default=300000)
 parser.add_argument("--experiment_name", type=str, default='')
 parser.add_argument("--dataset", type=str)
 parser.add_argument("--experiment_id", type=int, default=0)
+parser.add_argument("--load", action="store_true")
 args = parser.parse_args()
 np.random.seed(args.experiment_id)
 if args.train and args.test:
@@ -40,7 +41,8 @@ datasets = {
     'iid': dsprites.IterableDSPritesIID,
     'iid_pairs': dsprites.IterableDSpritesIIDPairs,
     'iid_triplets': dsprites.IterableDSpritesIIDTriplets,
-    'colour_triplets': rpm.ColourDSpritesTriplets
+    'colour_triplets': rpm.ColourDSpritesTriplets,
+    'colour': rpm.ColourDSprites
 }
 if args.dataset not in datasets.keys():
     parser.error("Dataset should be one of: " + ", ".join(datasets.keys()))
@@ -48,15 +50,16 @@ if args.dataset not in datasets.keys():
 label_dict = {
     'adatvae': ["recon_1", "recon_2", "recon_3", "kl_1", "kl_2", "kl_3", "tc", "tc_1", "tc_2"],
     'tvae': ["recon_1", "recon_2", "recon_3", "kl_1", "kl_2", "kl_3", "y", "y_"],
+    'vae': ["recon", "kl"]
     # 'tvae': ["recon_1", "recon_2", "recon_3", "kl_1", "kl_2", "kl_3"],
     'adagvae': ["recon_1", "recon_2", "kl_1", "kl_2"],
     # : ["recon_1", "kl_1"]
 }
-model_dict = {'adagvae': AdaGVAE, 'tvae': TVAE, 'adatvae': AdaTVAE}
+model_dict = {'adagvae': AdaGVAE, 'tvae': TVAE, 'adatvae': AdaTVAE, 'vae': VAE}
 
 vae = None
 labels = label_dict[args.model]
-if args.dataset == 'colour_triplets':
+if args.dataset in ['colour_triplets', 'colour']:
     train_data, test_data = rpm.get_dsprites(train_size=args.steps, test_size=10000, batch_size=64,
                                             dataset=datasets[args.dataset])
     vae = model_dict[args.model](n_channels=3)
@@ -70,24 +73,34 @@ if not args.test:
     opt = optim.Adam(vae.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-8)
     models.train_steps(vae, train_data, opt, verbose=True, writer=writer,
                 metrics_labels=labels)
-    if args.save:
-        torch.save(vae.state_dict(), model_path + ".pt")
+    # if args.save:
+        # torch.save(vae.state_dict(), model_path + ".pt")
 
 if not args.train:
+    if args.load:
+        vae.load_state_dict(torch.load( model_path + ".pt"))
     _, metrics = models.test(vae, test_data, verbose=True, metrics_labels=labels, 
                             writer=writer, experiment_id=args.experiment_id)
 
     with torch.no_grad():
         num_samples = 15
         x1, *_ = next(iter(test_data))
-        x1 = x1.reshape(64, 1, 64, 64)
+        if args.dataset == 'colour_triplets':
+            x1 = x1.reshape(64, 3, 64, 64)
+        else:
+            x1 = x1.reshape(64, 1, 64, 64)
         fig, axes = plt.subplots(num_samples, 2, figsize=(15,15), sharex=True, sharey=True)
         x1_ = vae.reconstruct_img(x1.clone().to(CUDA)).cpu().detach()
         for i in range(15):
-            axes[i, 0].imshow(x1[i].squeeze(), cmap="Greys_r")
+            img = x1[i]
+            img_ = x1_[i]
+            if args.dataset == 'colour_triplets':
+                img = img.T
+                img_ = img_.T
+            axes[i, 0].imshow(img.squeeze(), cmap="Greys_r")
             axes[i, 0].axis('off')
 
-            axes[i, 1].imshow(x1_[i].squeeze(), cmap="Greys_r")
+            axes[i, 1].imshow(img_.squeeze(), cmap="Greys_r")
             axes[i, 1].axis('off')
 
         axes[0, 0].set_title("source")
@@ -98,7 +111,7 @@ if not args.train:
 
         # DCI disentanglement metric
         print("DCI---")
-        dci_score = dci.compute_dci(vae)
+        dci_score = dci.compute_dci(vae, args.dataset)
         for label, metric in dci_score.items():
             print(label, ":", metric)
             writer.add_scalar(label, metric, args.experiment_id)

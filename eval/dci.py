@@ -10,14 +10,20 @@ sys.path.append('../')
 import models
 from models.models_disentanglement import AdaGVAE, batch_sample_latents
 from data import dsprites_data as dsprites
+from data import rpm_data as rpm
 from data.dsprites_data import IterableDSPritesIID
+from data.rpm_data import ColourDSprites
 
 # Calculates the disentanglement, completeness, and informativeness scores
 # Eastwood 2018 https://homepages.inf.ed.ac.uk/ckiw/postscript/iclr_final.pdf
 # implementation based on disentanglement_lib 
 # https://github.com/google-research/disentanglement_lib/blob/master/disentanglement_lib/evaluation/metrics/dci.py
-def compute_dci(model, train_size=10000, test_size=5000, batch_size=16):
-    train_data, test_data = dsprites.get_dsprites(train_size=train_size, test_size=test_size, 
+def compute_dci(model, dataset, train_size=10000, test_size=5000, batch_size=16):
+    if dataset == 'colour_triplets':
+        train_data, test_data = rpm.get_dsprites(train_size=train_size, test_size=test_size, 
+                                            dataset=ColourDSprites, batch_size=batch_size)
+    else:
+        train_data, test_data = dsprites.get_dsprites(train_size=train_size, test_size=test_size, 
                                             dataset=IterableDSPritesIID, batch_size=1)
     train_loc, train_y = batch_sample_latents(model, train_data, train_size, batch_size=batch_size)
     assert train_loc.shape[0] == train_size

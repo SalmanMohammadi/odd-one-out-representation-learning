@@ -27,7 +27,7 @@ class ColourDSpritesLoader():
             self.Y = dataset_zip['latents_values']
 
 class ColourDSprites(IterableDataset):
-    def __init__(self, dsprites_loader, size=300000, batch_size=64):
+    def __init__(self, dsprites_loader, size=300000, batch_size=64, k=None):
         # DSprites ground truth model for disentanglement learning
         self.batch_size = batch_size
         self.num_batches = size
@@ -51,7 +51,7 @@ class ColourDSprites(IterableDataset):
         object_color = np.expand_dims(np.expand_dims(OBJECT_COLORS[c[:,1]], 2), 2)
         
         X = X * object_color + (1. - X) * background_color
-        return X
+        return torch.tensor(X, dtype=torch.float32), np.hstack((c, z))
         
     def __iter__(self):
         for i in range(self.num_batches):
@@ -345,7 +345,7 @@ def get_dsprites(train_size=300000, test_size=10000, batch_size=64, k=1, dataset
     dsprites_loader = ColourDSpritesLoader(npz_path='./data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
     train_data = DataLoader(dataset(size=train_size, dsprites_loader=dsprites_loader, k=k, batch_size=batch_size),
                             batch_size=1)#, pin_memory=True, num_workers=16)
-    test_data = DataLoader(dataset(size=test_size, dsprites_loader=dsprites_loader, k=k, batch_size=batch_size),
+    test_data = DataLoader(dataset(size=test_size, dsprites_loader=dsprites_loader, k=k, batch_size=64),
                             batch_size=1)#, pin_memory=True, num_workers=16)                    
     return train_data, test_data
 
