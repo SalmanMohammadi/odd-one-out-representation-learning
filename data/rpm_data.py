@@ -37,21 +37,17 @@ class ColourDSprites(IterableDataset):
         self.latents_bases = np.concatenate((self.latents_sizes[::-1].cumprod()[::-1][1:],
                                                 np.array([1,])))
 
-    @property
-    def factors_sizes(self):
-        return np.array([BACKGROUND_COLORS.shape[0], OBJECT_COLORS.shape[0]] + self.latents_sizes)
-
     # generative random sampler
     def sample(self):
         c, z = self.sample_latent()
         z_idx = self.latent_to_index(z)
-        X = torch.tensor(self.dsprites_loader.X[z_idx], dtype=torch.float32)
+        X = self.dsprites_loader.X[z_idx]
 
         background_color = np.expand_dims(np.expand_dims(BACKGROUND_COLORS[c[:,0]], 2), 2)
         object_color = np.expand_dims(np.expand_dims(OBJECT_COLORS[c[:,1]], 2), 2)
         
         X = X * object_color + (1. - X) * background_color
-        return torch.tensor(X, dtype=torch.float32), np.hstack((c, z))
+        return torch.tensor(X, dtype=torch.float32), np.hstack((c, z[:,1:]))
         
     def __iter__(self):
         for i in range(self.num_batches):
@@ -345,7 +341,7 @@ def get_dsprites(train_size=300000, test_size=10000, batch_size=64, k=1, dataset
     dsprites_loader = ColourDSpritesLoader(npz_path='./data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
     train_data = DataLoader(dataset(size=train_size, dsprites_loader=dsprites_loader, k=k, batch_size=batch_size),
                             batch_size=1)#, pin_memory=True, num_workers=16)
-    test_data = DataLoader(dataset(size=test_size, dsprites_loader=dsprites_loader, k=k, batch_size=64),
+    test_data = DataLoader(dataset(size=test_size, dsprites_loader=dsprites_loader, k=k, batch_size=batch_size),
                             batch_size=1)#, pin_memory=True, num_workers=16)                    
     return train_data, test_data
 

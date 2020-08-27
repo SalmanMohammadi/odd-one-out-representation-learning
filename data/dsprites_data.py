@@ -260,10 +260,10 @@ def get_dsprites(train_size=300000, test_size=10000, batch_size=64, k=None, data
     Returns train and test DSprites dataset.
     """
     dsprites_loader = DSpritesLoader(npz_path='./data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
-    train_data = DataLoader(dataset(size=train_size, dsprites_loader=dsprites_loader, k=k),
-                            batch_size=batch_size)#, pin_memory=True, num_workers=16)
-    test_data = DataLoader(dataset(size=test_size, dsprites_loader=dsprites_loader, k=k),
-                            batch_size=batch_size)#, pin_memory=True, num_workers=16)                    
+    train_data = DataLoader(dataset(size=train_size, dsprites_loader=dsprites_loader, k=k, batch_size=batch_size),
+                            batch_size=1)#, pin_memory=True, num_workers=16)
+    test_data = DataLoader(dataset(size=test_size, dsprites_loader=dsprites_loader, k=k, batch_size=batch_size),
+                            batch_size=1)#, pin_memory=True, num_workers=16)                    
     return train_data, test_data
 
 if __name__ == "__main__":

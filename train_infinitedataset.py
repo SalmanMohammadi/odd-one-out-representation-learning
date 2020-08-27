@@ -70,24 +70,25 @@ else:
                                             dataset=datasets[args.dataset])
     vae = model_dict[args.model](n_channels=1)
 
+print(args)
 writer = SummaryWriter(log_dir=model_path)
 if not args.test:
     opt = optim.Adam(vae.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-8)
     models.train_steps(vae, train_data, opt, verbose=True, writer=writer,
                 metrics_labels=labels)
-    # if args.save:
-        # torch.save(vae.state_dict(), model_path + ".pt")
+    if args.save:
+        torch.save(vae.state_dict(), model_path + ".pt")
 
 if not args.train:
     if args.load:
         vae.load_state_dict(torch.load( model_path + ".pt"))
-    _, metrics = models.test(vae, test_data, verbose=True, metrics_labels=labels, 
-                            writer=writer, experiment_id=args.experiment_id)
+    # _, metrics = models.test(vae, test_data, verbose=True, metrics_labels=labels, 
+    #                         writer=writer, experiment_id=args.experiment_id)
 
     with torch.no_grad():
         num_samples = 15
         x1, *_ = next(iter(test_data))
-        if args.dataset == 'colour_triplets':
+        if args.dataset in ['colour_triplets', 'colour']:
             x1 = x1.reshape(64, 3, 64, 64)
         else:
             x1 = x1.reshape(64, 1, 64, 64)
@@ -96,7 +97,7 @@ if not args.train:
         for i in range(15):
             img = x1[i]
             img_ = x1_[i]
-            if args.dataset == 'colour_triplets':
+            if args.dataset in ['colour_triplets', 'colour']:
                 img = img.T
                 img_ = img_.T
             axes[i, 0].imshow(img.squeeze(), cmap="Greys_r")

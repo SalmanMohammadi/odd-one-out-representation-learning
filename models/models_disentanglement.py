@@ -75,7 +75,7 @@ class VAE(nn.Module):
     
     def batch_forward(self, data, device=CUDA):
         x, _ = data
-        x = x.to(device).squeeze()
+        x = x.to(device).squeeze(axis=0)
         x_, z_loc, z_logvar = self(x)
         
         return self.loss(x, x_, z_loc, z_logvar)
@@ -84,7 +84,20 @@ class VAE(nn.Module):
         r = F.binary_cross_entropy_with_logits(x_, x, reduction='sum').div(x.shape[0])
         kl =  -0.5 * torch.sum(1 + z_logvar - z_loc.pow(2) - z_logvar.exp(), 1).mean(0)
 
-        return r+kl, r, kl
+        return r + kl, r, kl
+
+    def reconstruct_img(self, x):
+        # encode image x
+        z_loc, z_logvar = self.encoder(x)
+        # sample in latent space
+        z = self.sample_log(z_loc, z_logvar)
+        # decode the image (note we don't sample in image space)
+        loc_img = self.decoder(z)
+        return nn.functional.sigmoid(loc_img)
+
+    def batch_representation(self, x):
+        z_loc, z_logvar = self.encoder(x)
+        return z_loc
 
 class AdaGVAE(nn.Module): 
     # architecture from Locatello et. al. http://arxiv.org/abs/2002.02886
@@ -462,8 +475,8 @@ def test(model, dataset, verbose=True, device=CUDA, metrics_labels=None, writer=
     with torch.no_grad():
         for batch_id, data in enumerate(dataset):
             loss, (*metrics) = model.batch_forward(data, device=device)
-            metrics_mean.append([x.item()/64 for x in metrics])
-            test_loss += loss.item()/64
+            metrics_mean.append([x.item() for x in metrics])
+            test_loss += loss.item()
 
     metrics_mean = np.array(metrics_mean)
     test_loss /= len(dataset.dataset)
