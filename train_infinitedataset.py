@@ -82,8 +82,8 @@ if not args.test:
 if not args.train:
     if args.load:
         vae.load_state_dict(torch.load( model_path + ".pt"))
-     _, metrics = models.test(vae, test_data, verbose=True, metrics_labels=labels, 
-                             writer=writer, experiment_id=args.experiment_id)
+    _, metrics = models.test(vae, test_data, verbose=True, metrics_labels=labels, 
+                                writer=writer, experiment_id=args.experiment_id)
 
     with torch.no_grad():
         num_samples = 15
