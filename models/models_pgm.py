@@ -32,9 +32,9 @@ class CNNEmbedder(nn.Module):
         return x
 
 class RelationNetwork(nn.Module):
-    def __init__(self):
+    def __init__(self, embedding_dim):
         super().__init__()
-        self.fc1 = nn.Linear(512, 512)
+        self.fc1 = nn.Linear(2*embedding_dim, 512)
         self.fc2 = nn.Linear(512, 512)
         self.fc3 = nn.Linear(512, 512)
         self.fc4 = nn.Linear(512, 512)
@@ -45,22 +45,26 @@ class RelationNetwork(nn.Module):
         return x
     
 class WReN(nn.Module):
-    def __init__(self, n_channels=3, embedder=CNNEmbedder):
+    def __init__(self, n_channels=3, embedder=CNNEmbedder, cuda=True):
         super().__init__()
         if embedder == CNNEmbedder:
             self.embedder = embedder()
+            self.embedding_size = self.embedder.z_dim
         else:
-            self.embedder = embedder
-
-        self.embedding_size = self.embedder.z_dim
-        self.relation_net = RelationNetwork()
+            self.embedder = embedder.batch_representation
+            self.embedding_size = embedder.z_dim
+        
+        self.relation_net = RelationNetwork(self.embedding_size)
 
         # scores embeddings
-        self.fc1 = nn.Linear(self.embedding_size*2, 256)
+        self.fc1 = nn.Linear(512, 256)
         self.fc2 = nn.Linear(256, 256)
         self.fc3 = nn.Linear(256, 1)
         self.dropout = nn.Dropout(p=0.5)
-    
+        
+        if cuda:
+            self.cuda()
+
     def score_embeddings(self, x):
         x = F.relu(self.fc1(x))
         x = self.dropout(F.relu(self.fc2(x)))
@@ -84,7 +88,7 @@ class WReN(nn.Module):
 
         # g_theta
         rn_paired_embeddings = self.relation_net(paired_embeddings.view(-1, self.embedding_size*2))
-        rn_paired_embeddings = rn_paired_embeddings.view(-1, 6, 8, self.embedding_size*2).sum(-2)
+        rn_paired_embeddings = rn_paired_embeddings.view(-1, 6, 8, 512).sum(-2)
 
         # f_theta
         scores = self.score_embeddings(rn_paired_embeddings).squeeze()#.sum(-1)
@@ -92,9 +96,7 @@ class WReN(nn.Module):
 
     def loss(self, scores, y):
         ce_loss = F.cross_entropy(scores, y, reduction='sum').div(scores.shape[0])
-        accuracy = (torch.argmax(scores, 1) == y).sum().item() / scores.shape[0]
-
-        return ce_loss, accuracy
+        return ce_loss
 
     def batch_forward(self, x, device):
         context, answers, y = x
@@ -105,12 +107,11 @@ class WReN(nn.Module):
         answers = answers.view(-1, 3, 64, 64).to(device)
         y = y.to(device).squeeze()
         scores = self.forward(context, answers)
-        loss, accuracy = self.loss(scores, y)
-        return loss, accuracy
+        return self.loss(scores, y), scores
 
-def train_steps(model, dataset, optimizer, device=CUDA, 
+def train_steps(model, dataset, val_dataset, optimizer, device=CUDA, 
                 verbose=True, writer=None, log_interval=100, write_interval=1000,
-                metrics_labels=None):
+                metrics_labels=None, eval_iter=1000):
     """
     Trains the model.
     """
@@ -118,24 +119,26 @@ def train_steps(model, dataset, optimizer, device=CUDA,
     metrics_mean = []
     for batch_id, data in enumerate(dataset):
         optimizer.zero_grad()
-        loss, (*metrics) = model.batch_forward(data, device)
+        loss, _ =  model.batch_forward(data, device)
         loss.backward()
         optimizer.step()
 
         # train_loss += loss.item()
         # metrics_mean.append([x.item() for x in metrics])
+        if batch_id % eval_iter == 0:
+            data = next(iter(val_dataset))
+            (_, _, y) = data
+            _ , scores = model.batch_forward(data, device)
+            y = y.to(device)
+            accuracy = (torch.argmax(scores, 1) == y).sum().item() / scores.shape[0]
+            print("Step: {}, Accuracy: {}".format(batch_id, accuracy))
+            if writer:
+                writer.add_scalar('train/accuracy', accuracy, batch_id)
         if batch_id % log_interval == 0 and verbose:
             print('Train step: {}, loss: {}'.format(
                 batch_id, loss.item()))
-            if metrics_labels:
-                print(", ".join(list(map(lambda x: "%s: %.5f" % x, zip(metrics_labels, metrics)))))
-            else:
-                print(metrics)
         if batch_id % write_interval == 0 and writer:
             writer.add_scalar('train/loss', loss.item(), batch_id)
-            if metrics_labels:
-                for label, metric in zip(metrics_labels, metrics):
-                    writer.add_scalar('train/'+label, metric, batch_id)
 
 def test(model, dataset, verbose=True, device=CUDA, 
         metrics_labels=None, writer=None, experiment_id=0):

@@ -318,21 +318,17 @@ class PGM(IterableDataset):
         for i in range(self.num_batches):
             yield self.sample()
 
-def get_datasets(train_sizes=(300000, 100000), test_sizes=(10000, 10000), 
-                    batch_sizes=(64, 32)):
+def get_datasets(train_size=100000, test_size=10000, batch_size=32):
     dsprites_loader = ColourDSpritesLoader(npz_path='./data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
-    train_disentanglement = DataLoader(ColourDSprites(dsprites_loader=dsprites_loader, batch_size=batch_sizes[0], 
-                                    size=train_sizes[0]), batch_size=1)
-    test_disentanglement = DataLoader(ColourDSprites(dsprites_loader=dsprites_loader, batch_size=batch_sizes[0], 
-                                    size=test_sizes[0]), batch_size=1)
-
     dsprites_reasoning = QuantizedColourDSprites(dsprites_loader=dsprites_loader)
-    train_abstract_reasoning = DataLoader(PGM(dsprites_reasoning, num_batches=train_sizes[1], batch_size=batch_sizes[1]), 
+    train_abstract_reasoning = DataLoader(PGM(dsprites_reasoning, num_batches=train_size, batch_size=batch_size), 
                                 batch_size=1)
-    test_abstract_reasoning = DataLoader(PGM(dsprites_reasoning, num_batches=test_sizes[1], batch_size=batch_sizes[1]), 
+    val_abstract_reasoning = DataLoader(PGM(dsprites_reasoning, num_batches=train_size//1000, batch_size=batch_size),
+                            batch_size=1)
+    test_abstract_reasoning = DataLoader(PGM(dsprites_reasoning, num_batches=test_size, batch_size=batch_size), 
                                 batch_size=1)
 
-    return (train_disentanglement, test_disentanglement), (train_abstract_reasoning, test_abstract_reasoning)
+    return train_abstract_reasoning, val_abstract_reasoning, test_abstract_reasoning
 
 def get_dsprites(train_size=300000, test_size=10000, batch_size=64, k=1, dataset=ColourDSpritesTriplets):
     """
