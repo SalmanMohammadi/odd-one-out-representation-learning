@@ -258,14 +258,15 @@ class TVAE(AdaGVAE):
         d_2 = torch.norm(loc_1_ - loc_3_, 2, 1, True)
         # d(x2, x3)
         d_3 = torch.norm(loc_2_ - loc_3_, 2, 1, True)
-        # log p(y|d(x1,x2)^2 - d(x1,x3)^2)
         # fully connected nn layer
-        y = torch.sigmoid(self.fc_disc(d_2.pow(2) - d_1.pow(2)).exp()).sum()
-        y_ = torch.sigmoid(self.fc_disc(d_2.pow(2) - d_3.pow(2)).exp()).sum()
+        # log p(y|d(x1,x2)^2 - d(x1,x3)^2)
+        y = torch.sigmoid(self.fc_disc(d_1.pow(2) - d_2.pow(2).log())).sum()
+        # log p(y|d(x1,x2)^2 - d(x2,x3)^2)
+        y_ = torch.sigmoid(self.fc_disc(d_1.pow(2) - d_3.pow(2).log())).sum()
         # y = nn.functional.binary_cross_entropy_with_logits(y_1, torch.ones(64, 1).to(CUDA), reduction='sum').div(64)
         # y_ = nn.functional.binary_cross_entropy_with_logits(y_2, torch.ones(64, 1).to(CUDA)*-1., reduction='sum').div(64)
 
-        loss += y #- y_
+        loss -= y #- y_
         return loss, r_1, r_2, r_3, kl_1, kl_2, kl_3, y, y_
 
 

@@ -24,7 +24,7 @@ parser.add_argument("--save", action="store_true")
 parser.add_argument("--experiment_name", type=str, default='')
 parser.add_argument("--experiment_id", type=int, default=0)
 args = parser.parse_args()
-np.random.seed(ars.experiment_id)
+np.random.seed(args.experiment_id)
 vae_dict = {
     'tvae': TVAE,
     'vae': VAE
