@@ -233,6 +233,17 @@ class TVAE(AdaGVAE):
                             z_loc_2, z_logvar_2, 
                             z_loc_3, z_logvar_3, y)
 
+    def batch_representation(self, x):
+        z_loc, z_logvar = self.encoder(x)
+        return z_loc
+
+    def triplet_batch_representation(self, x1, x2, x3):
+        z_loc_1, z_logvar_1 = self.encoder(x1)
+        z_loc_2, z_logvar_2 = self.encoder(x2)
+        z_loc_3, z_logvar_3 = self.encoder(x3)
+
+        return z_loc_1, z_loc_2, z_loc_3
+
     def loss(self, x1, x2, x3, x1_, x2_, x3_, 
                 z_loc_1, z_logvar_1, 
                 z_loc_2, z_logvar_2, 
@@ -508,3 +519,25 @@ def batch_sample_latents(model, data, num_points, batch_size=16, device=CUDA):
             labels[i*batch_size:(i*batch_size)+n, :] = Z[:n]
 
     return latents, labels
+
+def batch_sample_latent_triplets(model, data, num_points, batch_size=16, device=CUDA):
+    model.eval()
+    latents = torch.zeros((num_points, 3, 10))
+    labels = torch.zeros((num_points, 3))
+    assert len(data.dataset) >= num_points
+    with torch.no_grad():
+        for i, (x1, x2, x3, y) in enumerate(islice(data, (num_points//batch_size)+1)):
+            x1 = x1.to(device).squeeze()
+            x2 = x2.to(device).squeeze()
+            x3 = x3.to(device).squeeze()
+            y = y.to(device).squeeze()
+            n = min(num_points - ((i) * batch_size), batch_size)
+            z1 = model.batch_representation(x1[:n])
+            z2 = model.batch_representation(x2[:n])
+            z3 = model.batch_representation(x3[:n])
+            latents[i*batch_size:(i*batch_size)+n, 0] = z1
+            latents[i*batch_size:(i*batch_size)+n, 1] = z2
+            latents[i*batch_size:(i*batch_size)+n, 2] = z3
+            labels[i*batch_size:(i*batch_size)+n, :] = y[:n]
+
+    return latents.view(num_points, -1), labels

@@ -10,7 +10,7 @@ from models.models_disentanglement import AdaGVAE, TVAE, AdaTVAE, VAE
 from data import rpm_data as rpm
 from data import dsprites_data as dsprites
 import matplotlib.pyplot as plt
-from eval import dci
+from eval import dci, triplets
 from torch.utils.tensorboard import SummaryWriter 
 
 CUDA = torch.device('cuda')
@@ -25,6 +25,7 @@ parser.add_argument("--experiment_name", type=str, default='')
 parser.add_argument("--dataset", type=str)
 parser.add_argument("--experiment_id", type=int, default=0)
 parser.add_argument("--load", action="store_true")
+parser.add_argument("--triplet_test", action="store_true")
 args = parser.parse_args()
 np.random.seed(args.experiment_id)
 
@@ -112,10 +113,17 @@ if not args.train:
         plt.axis('off')
         writer.add_figure('test/reconstructions', fig)
 
-        # DCI disentanglement metric
-        print("DCI---")
-        dci_score = dci.compute_dci(vae, args.dataset)
-        for label, metric in dci_score.items():
+        # # DCI disentanglement metric
+        # print("DCI---")
+        # dci_score = dci.compute_dci(vae, args.dataset)
+        # for label, metric in dci_score.items():
+        #     print(label, ":", metric)
+        #     writer.add_scalar(label, metric, args.experiment_id)
+
+        # triplet metric
+        print("TRIPLET---")
+        scores = triplets.calculate_triplet_score(vae)
+        for label, metric in scores.items():
             print(label, ":", metric)
             writer.add_scalar(label, metric, args.experiment_id)
 
