@@ -51,7 +51,7 @@ class Decoder(nn.Module):
         return x
 
 class VAE(nn.Module):
-    def __init__(self, z_dim=10, n_channels=3, use_cuda=True):
+    def __init__(self, z_dim=10, n_channels=3, use_cuda=True, gamma=None, alpha=None):
         super().__init__()
         # create the encoder and decoder networks
         self.encoder = Encoder(z_dim, n_channels)
@@ -198,11 +198,14 @@ class AdaGVAE(nn.Module):
 
 # TripletVAE
 class TVAE(AdaGVAE):
-    def __init__(self, z_dim=10, n_channels=3, use_cuda=True, adaptive=True, k=None):
+    def __init__(self, z_dim=10, n_channels=3, use_cuda=True, 
+                adaptive=True, k=None, gamma=1, alpha=1):
         super().__init__(z_dim, n_channels, use_cuda, adaptive, k)
 
         self.fc_disc = nn.Linear(1, 1)
         self.cuda()
+        self.alpha = alpha
+        self.gamma = gamma
 
     def forward(self, x1, x2, x3):
         z_loc_1, z_logvar_1 = self.encoder(x1)
@@ -270,10 +273,10 @@ class TVAE(AdaGVAE):
         # d(x2, x3)
         d_3 = torch.norm(loc_2_ - loc_3_, 2, 1, True)
         # fully connected nn layer
-        # log p(y|d(x1,x2)^2 - d(x1,x3)^2)
-        y = torch.sigmoid(self.fc_disc(d_1.pow(2) - d_2.pow(2))).sum()
-        # log p(y|d(x1,x2)^2 - d(x2,x3)^2)
-        y_ = torch.sigmoid(self.fc_disc(d_1.pow(2) - d_3.pow(2))).sum()
+        # log p(y|d(x1,x3)^2 - d(x1,x2)^2)
+        y = self.gamma * torch.sigmoid(self.fc_disc(d_2.pow(2) - d_1.pow(2)) * (1/self.alpha)).log().sum()
+        # log p(y|d(x2,x3)^2 - d(x1,x2)^2)
+        y_ = self.gamma * torch.sigmoid(self.fc_disc(d_3.pow(2) - d_1.pow(2)) * (1/self.alpha)).log().sum()
         # y = nn.functional.binary_cross_entropy_with_logits(y_1, torch.ones(64, 1).to(CUDA), reduction='sum').div(64)
         # y_ = nn.functional.binary_cross_entropy_with_logits(y_2, torch.ones(64, 1).to(CUDA)*-1., reduction='sum').div(64)
 
