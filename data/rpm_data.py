@@ -218,21 +218,44 @@ class PGM(IterableDataset):
         self.cols = 3
         self.factors = np.array(factors)
 
-    def sample_no_relation(self, factor, size):
-        # sample order of factors in matrix
-        idx_duplicate = np.zeros((size*2, 3), dtype=int)
-        rand_ = np.random.randint(3, size=size*2)
-        idx_duplicate[range(size*2), rand_] = 1
+    def sample_constant_row(self, factor, size):
+        return (np.ones((3, size)) * np.random.randint(factor, size=size)).T
 
-        # vectorized random sampling without replacement trick
-        idx = np.random.rand(size*2, factor).argpartition(2,axis=1)[:,:2]
-        out = np.take(range(factor), idx)
-        out = out[np.array([range(size*2)]*3).T, idx_duplicate].reshape(size,2,3)
-        
-        # sample final rows
-        final = np.expand_dims(np.random.choice(factor, size=(size, 3)), 1)
-        matrix = np.hstack((out, final))
-        return matrix
+    def sample_distinct_row(self, factor, size):
+        return np.random.rand(size, factor).argpartition(1, axis=1)[:,:3]
+
+    def sample_aab(self, factor, size):
+        factors = np.random.rand(size, factor).argpartition(1, axis=1)[:,:2]
+        return np.stack((factors[:,0], factors[:, 0], factors[:, 1]), axis=1)
+
+    def sample_aba(self, factor, size):
+        factors = np.random.rand(size, factor).argpartition(1, axis=1)[:,:2]
+        return np.stack((factors[:,0], factors[:, 1], factors[:, 0]), axis=1)
+
+    def sample_baa(self, factor, size):
+        factors = np.random.rand(size, factor).argpartition(1, axis=1)[:,:2]
+        return np.stack((factors[:,1], factors[:, 0], factors[:, 0]), axis=1)
+
+    def sample_no_relation(self, factor, size):
+        # sample 2 without replacement [aaa, abc, aab, aba, baa]
+        # sample a (size, 2) mattrix, nonactiverelations without replacement from the above
+        # use this to sample a (size, 2, 3) matrix where (size, 0, :) = nonactiverelations[0], etc
+        # also randomly sample a (size, 3)  final row
+        rows = np.zeros((size, 2, 3))
+        final_rows = np.expand_dims(np.random.choice(factor, size=(size, 3)), 1)
+
+        sampling_options = np.array([self.sample_constant_row, self.sample_distinct_row, self.sample_aab, self.sample_aba, self.sample_baa])
+        idx = np.random.rand(size, len(sampling_options)).argpartition(1, axis=1)[:,:2]
+        row_relations = sampling_options[idx]
+        for fn in sampling_options:
+            idx_0 = row_relations[:, 0] == fn
+            idx_1 = row_relations[:, 1] == fn
+            if sum(idx_0):
+                rows[idx_0, 0, :] = fn(factor, sum(idx_0))
+            if sum(idx_1):
+                rows[idx_1, 1, :] = fn(factor, sum(idx_1))
+                
+        return np.hstack((rows, final_rows))
 
     def sample_constant_relation(self, factor, size):
         matrix = np.zeros((size, 3, 3), dtype=int)
@@ -244,24 +267,28 @@ class PGM(IterableDataset):
     def sample(self):
         # sample a (batch_size, 3, 3, num_relations) array of AND relationship indicies
         # and a (batch_size, 5, num_relations) array of hard alternative answers
+
+        # sample number of active relations
         if self.n_relations:
             num_relations = np.ones((self.batch_size)) * self.n_relations
         else:
             num_relations = 1 + np.random.choice(3, size=self.batch_size)
-
+        
+        # sample without replacement which factors will have active relations
         relations_idx = np.zeros((self.batch_size, len(self.factors)), dtype=int)
+        
         for i in range(1, 4):
             idx = num_relations == i
             if sum(idx) > 0:
                 relations_factors = np.random.rand(sum(idx), len(self.factors)).argpartition(1,axis=1)[:,:i]
                 relations_idx[idx, relations_factors.T] = 1
-
+        # sample active and non active relations
         matrix = np.zeros((self.batch_size, 3, 3, len(self.factors)), dtype=int)
         for j, factor in enumerate(self.factors):
             idx_ = relations_idx[:, j].astype(bool)
             matrix[idx_, :, :, j] = self.sample_constant_relation(factor, idx_.sum())
             matrix[(~idx_), :, :, j] = self.sample_no_relation(factor, (~idx_).sum())
-
+        
         # TODO URGENT
         # ensure modify_solutions doesn't return alternative solutions already in solutions
         solutions = np.zeros((self.batch_size, 5, len(self.factors)), dtype=int)
@@ -280,13 +307,17 @@ class PGM(IterableDataset):
         # sample ground truth factors
         matrix_observations = self.dataset.latent_to_observations(matrix.reshape(-1, 6)).reshape(-1, 3, 3, 3, 64, 64)
         alternative_observations = self.dataset.latent_to_observations(alternative_solutions.reshape(-1, 6)).reshape(-1, 6, 3, 64, 64)
-        alternative_observations[~idx] = matrix_observations[:, -1, -1]        
+        
+        # place correct answer into alternative answer set
+        alternative_observations[~idx] = matrix_observations[:, -1, -1]    
+
+        # embed factor values 
+        matrix_values = torch.tensor(self.embed_factors(matrix.reshape(-1, 6)).reshape(-1, 3, 3, 6), dtype=torch.float32)
+        alternative_values = torch.tensor(self.embed_factors(alternative_solutions.reshape(-1, 6)).reshape(-1, 6, 6), dtype=torch.float32)
         matrix_observations = torch.tensor(matrix_observations, dtype=torch.float32)
         alternative_observations = torch.tensor(alternative_observations, dtype=torch.float32)
         positions = torch.tensor(positions, dtype=torch.int64)
-
-        matrix_values = self.embed_factors(matrix.reshape(-1, 6)).reshape(-1, 3, 3, 6)
-        alternative_values = self.embed_factors(alternative_solutions.reshape(-1, 6)).reshape(-1, 6, 6)
+        
         return matrix_observations, alternative_observations, positions, matrix_values, alternative_values
 
     def modify_solutions(self, matrix, relations_idx, num_relations):
@@ -299,7 +330,6 @@ class PGM(IterableDataset):
         active_relations = np.split(np.nonzero(relations_idx[idx])[1], np.cumsum(num_relations[idx]))[:-1]
         m_relations_idx = np.zeros((self.batch_size), dtype=int)
         m_relations_idx[idx] = np.array([np.random.choice(x) for x in active_relations])
-
         new_solutions = np.ones((self.batch_size), dtype=int) * -1
         # sample new fixed random factor per item in batch until
         # there are no samples which have the same factor as the original
@@ -310,21 +340,12 @@ class PGM(IterableDataset):
         
         idx = np.sum(relations_idx, 1) > 1
         init_solutions[idx, m_relations_idx[idx]] = new_solutions[idx]
+        
         # resample non active relations
         for j, factor in enumerate(self.factors):
             # get indices for constant relations for the current batch
             idx = relations_idx[:, j].astype(bool)
-            # ensure ~idx_ are of the form aaa or abc w.r.t alt_mat[~idx_, -1, :-1, j]
-            # idx for all non constant relations of the form aa become aaa
-            same_idx = np.logical_and(idx, alt_mat[:, -1, 0, j] == alt_mat[:, -1, 1, j])
-            init_solutions[same_idx,  j] = alt_mat[same_idx, -1, 1, j]
-            # idx for all non constant relations of the form ab/ba become abc/bac               
-            # ensure it's randomly sampled and doesnt include alt_mat[~idx, -1, :-1, j]
-            factor_set = np.array([range(factor)]*np.sum(~same_idx))
-            factor_samples = np.ones((np.sum(~same_idx), factor), dtype=bool)
-            factor_samples[range(np.sum(~same_idx)), alt_mat[~same_idx, -1, :-1, j].T] = 0
-            factor_set = factor_set[factor_samples]#.reshape(len(idx), factor-2)
-            init_solutions[~same_idx, j] = factor_set[np.random.choice(factor-2, size=np.sum(~same_idx))]
+            init_solutions[~idx, j] = np.random.choice(factor, size=sum(~idx))
 
         return init_solutions
     
@@ -382,24 +403,24 @@ def show_task(matrix, alternative_solutions, y):
 # class IterableDSpritesIIDPairs(IterableDataset):
 #     def __init__(self, dsprites_loader, size=300000, batch_size=64, k=None):
 if __name__ == '__main__':
-    dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
-    data = DataLoader(ColourDSprites(dsprites_loader=dsprites_loader),
-                                        batch_size=1)
-    x = next(iter(data))[0][0]
-    print(x.shape)
-    fix, axes = plt.subplots(15, sharex=True, sharey=True)
-    for i in range(15):
-        axes[i].imshow(x[i].T)
-    plt.show()
-
-
     # dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
-    # data = QuantizedColourDSprites(dsprites_loader=dsprites_loader)
-    # pgm_data = DataLoader(PGM(data, num_batches=300000, batch_size=32), batch_size=1)
-    # x, x_, y, _, _ = next(iter(pgm_data))
-    # x, x_, y = x.squeeze(), x_.squeeze(), y.squeeze()
+    # data = DataLoader(ColourDSprites(dsprites_loader=dsprites_loader),
+    #                                     batch_size=1)
+    # x = next(iter(data))[0][0]
     # print(x.shape)
-    # show_task(x[0], x_[0], y[0])
+    # fix, axes = plt.subplots(15, sharex=True, sharey=True)
+    # for i in range(15):
+    #     axes[i].imshow(x[i].T)
+    # plt.show()
+
+
+    dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
+    data = QuantizedColourDSprites(dsprites_loader=dsprites_loader)
+    pgm_data = DataLoader(PGM(data, num_batches=300000, batch_size=32), batch_size=1)
+    x, x_, y, _, _ = next(iter(pgm_data))
+    x, x_, y = x.squeeze(), x_.squeeze(), y.squeeze()
+    print(x.shape)
+    show_task(x[0], x_[0], y[0])
 
     # dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
     # data = DataLoader(ColourDSpritesTriplets(dsprites_loader=dsprites_loader, batch_size=5, k=1), batch_size=1)
