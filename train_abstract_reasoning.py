@@ -16,6 +16,7 @@ CUDA = torch.device('cuda')
 # set random seed
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--values", action='store_true')
 parser.add_argument("--embedding_model", type=str, default='')
 parser.add_argument("--model_path", type=str, default='')
 parser.add_argument("--train", action="store_true")
@@ -25,6 +26,7 @@ parser.add_argument("--experiment_name", type=str, default='')
 parser.add_argument("--experiment_id", type=int, default=0)
 args = parser.parse_args()
 np.random.seed(args.experiment_id)
+
 vae_dict = {
     'tvae': TVAE,
     'vae': VAE
@@ -49,6 +51,8 @@ train_data, val_data, test_data = rpm.get_datasets()
 
 # open pretrained model
 model = WReN()
+if args.values:
+    model = WReN(embedder='values')
 if args.model_path:
     vae = vae_dict[args.embedding_model](n_channels=3)
     vae.load_state_dict(torch.load(args.model_path))

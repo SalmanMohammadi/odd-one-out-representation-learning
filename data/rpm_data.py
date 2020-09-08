@@ -208,12 +208,12 @@ class QuantizedColourDSprites():
         return np.dot(latents, self.latents_bases).astype(int)
 
 class PGM(IterableDataset):
-    def __init__(self, dataset, num_batches, batch_size=32, relations_p=[1/3]*3, 
+    def __init__(self, dataset, num_batches, batch_size=32, n_relations=None, 
                 rows=3, cols=3, factors=[5, 6, 3, 3, 4, 4]):
         self.dataset = dataset
         self.batch_size = batch_size
         self.num_batches = num_batches
-        self.relations_p = relations_p
+        self.n_relations = n_relations
         self.rows = 3
         self.cols = 3
         self.factors = np.array(factors)
@@ -244,14 +244,21 @@ class PGM(IterableDataset):
     def sample(self):
         # sample a (batch_size, 3, 3, num_relations) array of AND relationship indicies
         # and a (batch_size, 5, num_relations) array of hard alternative answers
-        # **** TODO URGENT ***
-        # change num_relations to be per-sample in batch rather than constant over a batch
-        num_relations = 1 + np.random.choice(3, p=self.relations_p)
-        relations_idx = np.hstack([np.random.rand(self.batch_size, len(self.factors)).argpartition(1,axis=1)[:,:1] 
-                                for _ in range(num_relations)])
+        if self.n_relations:
+            num_relations = np.ones((self.batch_size)) * self.n_relations
+        else:
+            num_relations = 1 + np.random.choice(3, size=self.batch_size)
+
+        relations_idx = np.zeros((self.batch_size, len(self.factors)), dtype=int)
+        for i in range(1, 4):
+            idx = num_relations == i
+            if sum(idx) > 0:
+                relations_factors = np.random.rand(sum(idx), len(self.factors)).argpartition(1,axis=1)[:,:i]
+                relations_idx[idx, relations_factors.T] = 1
+
         matrix = np.zeros((self.batch_size, 3, 3, len(self.factors)), dtype=int)
         for j, factor in enumerate(self.factors):
-            idx_ = np.any([relations_idx[:,i] == j for i in range(num_relations)], axis=0)
+            idx_ = relations_idx[:, j].astype(bool)
             matrix[idx_, :, :, j] = self.sample_constant_relation(factor, idx_.sum())
             matrix[(~idx_), :, :, j] = self.sample_no_relation(factor, (~idx_).sum())
 
@@ -277,26 +284,36 @@ class PGM(IterableDataset):
         matrix_observations = torch.tensor(matrix_observations, dtype=torch.float32)
         alternative_observations = torch.tensor(alternative_observations, dtype=torch.float32)
         positions = torch.tensor(positions, dtype=torch.int64)
-        return matrix_observations, alternative_observations, positions
+
+        matrix_values = self.embed_factors(matrix.reshape(-1, 6)).reshape(-1, 3, 3, 6)
+        alternative_values = self.embed_factors(alternative_solutions.reshape(-1, 6)).reshape(-1, 6, 6)
+        return matrix_observations, alternative_observations, positions, matrix_values, alternative_values
 
     def modify_solutions(self, matrix, relations_idx, num_relations):
         alt_mat = np.copy(matrix)
         init_solutions = np.copy(matrix[:, -1, -1, :])
-        m_relations_idx = relations_idx[range(self.batch_size), np.random.randint(num_relations, size=self.batch_size)]
-        idx = np.array(range(self.batch_size))
-        new_solutions = np.zeros((self.batch_size, 6), dtype=int)
-        # sample new fixed random factor per item in batch
+
+        # find samples which have more than 1 active relation to resample
+        idx = np.sum(relations_idx, 1) > 1
+        # randomly sample a single relation to change
+        active_relations = np.split(np.nonzero(relations_idx[idx])[1], np.cumsum(num_relations[idx]))[:-1]
+        m_relations_idx = np.zeros((self.batch_size), dtype=int)
+        m_relations_idx[idx] = np.array([np.random.choice(x) for x in active_relations])
+
+        new_solutions = np.ones((self.batch_size), dtype=int) * -1
+        # sample new fixed random factor per item in batch until
+        # there are no samples which have the same factor as the original
         while np.any(idx):
-            factors_ = np.hstack([np.random.rand(len(idx), factor).argpartition(1,axis=1)[:,:1] 
-                                    for factor in self.factors])
-            new_solutions[idx] = factors_[m_relations_idx[idx]]
-            idx = new_solutions == init_solutions[idx, m_relations_idx[idx]]
+            factors_ = np.hstack([np.random.choice(factor, size=sum(idx))[:, None] for factor in self.factors])
+            new_solutions[idx] = factors_[range(sum(idx)), m_relations_idx[idx]]
+            idx[idx] = new_solutions[idx] == init_solutions[idx, m_relations_idx[idx]] 
         
-        init_solutions[m_relations_idx] = new_solutions
+        idx = np.sum(relations_idx, 1) > 1
+        init_solutions[idx, m_relations_idx[idx]] = new_solutions[idx]
         # resample non active relations
         for j, factor in enumerate(self.factors):
             # get indices for constant relations for the current batch
-            idx = np.any([relations_idx[:,i] == j for i in range(num_relations)], axis=0)
+            idx = relations_idx[:, j].astype(bool)
             # ensure ~idx_ are of the form aaa or abc w.r.t alt_mat[~idx_, -1, :-1, j]
             # idx for all non constant relations of the form aa become aaa
             same_idx = np.logical_and(idx, alt_mat[:, -1, 0, j] == alt_mat[:, -1, 1, j])
@@ -314,6 +331,15 @@ class PGM(IterableDataset):
     def __len__(self):
         return self.num_batches
     
+    def embed_factors(self, factors):
+        """
+        Embeds factors linearly in [-0.5, 0.5]
+        """
+        result = np.array(factors, dtype=np.float32)
+        max_vals = np.array(self.factors, dtype=np.float32) - 1.
+        result /= np.expand_dims(max_vals, 0)
+        return result - .5
+
     def __iter__(self):
         for i in range(self.num_batches):
             yield self.sample()
@@ -323,7 +349,7 @@ def get_datasets(train_size=100000, test_size=10000, batch_size=32):
     dsprites_reasoning = QuantizedColourDSprites(dsprites_loader=dsprites_loader)
     train_abstract_reasoning = DataLoader(PGM(dsprites_reasoning, num_batches=train_size, batch_size=batch_size), 
                                 batch_size=1)
-    val_abstract_reasoning = DataLoader(PGM(dsprites_reasoning, num_batches=train_size//1000, batch_size=batch_size),
+    val_abstract_reasoning = DataLoader(PGM(dsprites_reasoning, num_batches=train_size//10, batch_size=batch_size),
                             batch_size=1)
     test_abstract_reasoning = DataLoader(PGM(dsprites_reasoning, num_batches=test_size, batch_size=batch_size), 
                                 batch_size=1)
@@ -334,7 +360,7 @@ def get_dsprites(train_size=300000, test_size=10000, batch_size=64, k=1, dataset
     """
     Returns train and test DSprites dataset.
     """
-    dsprites_loader = ColourDSpritesLoader(npz_path='./data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
+    dsprites_loader = ColourDSpritesLoader(npz_path='../data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
     train_data = DataLoader(dataset(size=train_size, dsprites_loader=dsprites_loader, k=k, batch_size=batch_size),
                             batch_size=1)#, pin_memory=True, num_workers=16)
     test_data = DataLoader(dataset(size=test_size, dsprites_loader=dsprites_loader, k=k, batch_size=batch_size),
@@ -367,13 +393,13 @@ if __name__ == '__main__':
     plt.show()
 
 
-    # # dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
-    # # data = QuantizedColourDSprites(dsprites_loader=dsprites_loader)
-    # # pgm_data = DataLoader(PGM(data, num_batches=300000, batch_size=32), batch_size=1)
-    # # x, x_, y = next(iter(pgm_data))
-    # # x, x_, y = x.squeeze(), x_.squeeze(), y.squeeze()
-    # # print(x.shape)
-    # # show_task(x[0], x_[0], y[0])
+    # dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
+    # data = QuantizedColourDSprites(dsprites_loader=dsprites_loader)
+    # pgm_data = DataLoader(PGM(data, num_batches=300000, batch_size=32), batch_size=1)
+    # x, x_, y, _, _ = next(iter(pgm_data))
+    # x, x_, y = x.squeeze(), x_.squeeze(), y.squeeze()
+    # print(x.shape)
+    # show_task(x[0], x_[0], y[0])
 
     # dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
     # data = DataLoader(ColourDSpritesTriplets(dsprites_loader=dsprites_loader, batch_size=5, k=1), batch_size=1)

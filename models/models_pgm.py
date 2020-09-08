@@ -50,11 +50,14 @@ class WReN(nn.Module):
         if embedder == CNNEmbedder:
             self.embedder = embedder()
             self.embedding_size = self.embedder.z_dim
+        elif embedder == 'values':
+            self.embedder = 'values'
+            self.embedding_size = 6
         else:
             self.embedder = embedder.batch_representation
             self.embedding_size = embedder.z_dim
         
-        self.relation_net = RelationNetwork(self.embedding_size)
+        self.relation_net = RelationNetwork(self.embedding_size + 9)
 
         # scores embeddings
         self.fc1 = nn.Linear(512, 256)
@@ -70,28 +73,58 @@ class WReN(nn.Module):
         x = self.dropout(F.relu(self.fc2(x)))
         return self.fc3(x)
 
-    def pair_context_answer_embeddings(self, context_embeddings, answer_embeddings):
-        return torch.cat((context_embeddings.unsqueeze(1).repeat(1,6,1,1), 
-                    answer_embeddings.unsqueeze(2).repeat(1, 1, 8, 1)), -1)
+    def stack_context_answer_embeddings(self, context_embeddings, answer_embeddings):
+        answer_blocks = []
+        for i in range(answer_embeddings.shape[1]):
+            ith_answer = answer_embeddings.select(-2, i).unsqueeze(-2)
+            ith_answer_block = torch.cat([context_embeddings, ith_answer], axis=-2)
+            answer_blocks.append(ith_answer_block)
+        return torch.stack(answer_blocks, axis=-3)
+
+    def panel_tags_like(self, stacked_panels):
+        tags = torch.eye(stacked_panels.shape[-2]).to(CUDA)
+        tags = tags.reshape((1, 1, 9, 9))
+        mult = list(stacked_panels.shape)
+        mult[-2] = 1
+        mult[-1] = 1     
+        return tags.repeat(mult)
+    
+    def pair_embeddings(self, tagged_embeddings):
+        return torch.cat(
+                (tagged_embeddings.unsqueeze(-2).repeat([1, 1, 1, 9, 1]),
+                tagged_embeddings.unsqueeze(-3).repeat([1, 1, 9, 1, 1])),
+            axis=-1)
 
     def forward(self, context, answers):
         # x - (batch_size, (context, answers), 3, 64, 64)
         # context - (batch_size, 8, 3, 64, 64)
         # answers - (batch_size, 6, 3, 64, 64)
-        
-        context_embeddings = self.embedder(context).view(-1, self.embedding_size)
-        answer_embeddings = self.embedder(answers).view(-1, self.embedding_size)
-
+        if self.embedder == 'values':
+            context_embeddings = context
+            answer_embeddings = answers
+        else:
+            context_embeddings = self.embedder(context).view(-1, self.embedding_size)
+            answer_embeddings = self.embedder(answers).view(-1, self.embedding_size)
+            
         context_embeddings = context_embeddings.reshape(-1, 8, self.embedding_size)
         answer_embeddings = answer_embeddings.reshape(-1, 6, self.embedding_size)
-        paired_embeddings = self.pair_context_answer_embeddings(context_embeddings, answer_embeddings)
+        stacked_panels = self.stack_context_answer_embeddings(context_embeddings, answer_embeddings)
+        # print("stacked", stacked_panels.shape)
+        tagged_embeddings = torch.cat([stacked_panels, self.panel_tags_like(stacked_panels)], axis=-1)
+        # print("tagged", tagged_embeddings.shape)
+        paired_embeddings = self.pair_embeddings(tagged_embeddings)
+        # print("paired", paired_embeddings.shape)
 
         # g_theta
-        rn_paired_embeddings = self.relation_net(paired_embeddings.view(-1, self.embedding_size*2))
-        rn_paired_embeddings = rn_paired_embeddings.view(-1, 6, 8, 512).sum(-2)
-
+        # rn_paired_embeddings = self.relation_net(stacked_panels.view(-1, self.embedding_size*2))
+        rn_paired_embeddings = self.relation_net(paired_embeddings)
+        # print("rn output", rn_paired_embeddings.shape)
+        rn_paired_embeddings = rn_paired_embeddings.sum(-2).sum(-2)
+        # print("rn summed", rn_paired_embeddings.shape)
         # f_theta
-        scores = self.score_embeddings(rn_paired_embeddings).squeeze()#.sum(-1)
+        scores = self.score_embeddings(rn_paired_embeddings).sum(-1)
+        # print("scores", scores.shape)
+        # exit()
         return scores
 
     def loss(self, scores, y):
@@ -99,12 +132,15 @@ class WReN(nn.Module):
         return ce_loss
 
     def batch_forward(self, x, device):
-        context, answers, y = x
-
+        context, answers, y, context_values, answers_values = x
         # drop the last panel from the context
-        context = context.view(-1, 9, 3, 64, 64)[:, :-1]
-        context = context.reshape(-1, 3, 64, 64).to(device)
-        answers = answers.view(-1, 3, 64, 64).to(device)
+        if self.embedder == 'values':
+            context = context_values.view(-1, 9, 6)[:, :-1].to(device)
+            answers = answers_values.view(-1, 6, 6).to(device)
+        else:
+            context = context.view(-1, 9, 3, 64, 64)[:, :-1]
+            context = context.reshape(-1, 3, 64, 64).to(device)
+            answers = answers.view(-1, 3, 64, 64).to(device)
         y = y.to(device).squeeze()
         scores = self.forward(context, answers)
         return self.loss(scores, y), scores
@@ -127,7 +163,7 @@ def train_steps(model, dataset, val_dataset, optimizer, device=CUDA,
         # metrics_mean.append([x.item() for x in metrics])
         if batch_id % eval_iter == 0:
             data = next(iter(val_dataset))
-            (_, _, y) = data
+            (_, _, y, _, _) = data
             _ , scores = model.batch_forward(data, device)
             y = y.to(device)
             accuracy = (torch.argmax(scores, 1) == y).sum().item() / scores.shape[0]
