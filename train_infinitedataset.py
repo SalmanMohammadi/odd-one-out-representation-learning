@@ -25,9 +25,9 @@ parser.add_argument("--experiment_name", type=str, default='')
 parser.add_argument("--dataset", type=str)
 parser.add_argument("--experiment_id", type=int, default=0)
 parser.add_argument("--load", action="store_true")
-parser.add_argument("--triplet_test", action="store_true")
 parser.add_argument("--gamma", type=int, default=1)
 parser.add_argument("--alpha", type=float, default=1)
+parser.add_argument("--warm_up_steps", type=int, default=0)
 args = parser.parse_args()
 np.random.seed(args.experiment_id)
 
@@ -38,6 +38,9 @@ if args.train and args.test:
 
 if args.model not in model_dict.keys():
     parser.error("Specify model: one of: " + ", ".join(model_dict.keys()))
+
+if args.warm_up_steps >= args.steps:
+    parser.error("--warm_up_steps can't be greater than --steps (default 300000).")
 
 experiment_id = '/' + str(args.experiment_id)
 experiment_name = '/' + args.experiment_name if args.experiment_name else ''
@@ -67,7 +70,7 @@ labels = label_dict[args.model]
 if args.dataset in ['colour_triplets', 'colour']:
     train_data, test_data = rpm.get_dsprites(train_size=args.steps, test_size=10000, batch_size=64,
                                             dataset=datasets[args.dataset])
-    vae = model_dict[args.model](n_channels=3, gamma=args.gamma, alpha=args.alpha)
+    vae = model_dict[args.model](n_channels=3, gamma=args.gamma, alpha=args.alpha, warm_up=args.warm_up_steps)
 else:
     train_data, test_data = dsprites.get_dsprites(train_size=args.steps, test_size=10000, batch_size=64, k=1,
                                             dataset=datasets[args.dataset])
@@ -78,44 +81,44 @@ writer = SummaryWriter(log_dir=model_path)
 if not args.test:
     opt = optim.Adam(vae.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-8)
     models.train_steps(vae, train_data, opt, verbose=True, writer=writer,
-                metrics_labels=labels)
+                metrics_labels=labels, num_steps=args.steps)
     if args.save:
         torch.save(vae.state_dict(), model_path + ".pt")
 
 if not args.train:
     if args.load:
         vae.load_state_dict(torch.load( model_path + ".pt"))
-    # _, metrics = models.test(vae, test_data, verbose=True, metrics_labels=labels, 
-    #                             writer=writer, experiment_id=args.experiment_id)
+    _, metrics = models.test(vae, test_data, verbose=True, metrics_labels=labels, 
+                                writer=writer, experiment_id=args.experiment_id)
 
-    # with torch.no_grad():
-    #     num_samples = 15
-    #     x1, *_ = next(iter(test_data))
-    #     if args.dataset in ['colour_triplets', 'colour']:
-    #         x1 = x1.reshape(64, 3, 64, 64)
-    #     else:
-    #         x1 = x1.reshape(64, 1, 64, 64)
-    #     fig, axes = plt.subplots(num_samples, 2, figsize=(15,15), sharex=True, sharey=True)
-    #     x1_ = vae.reconstruct_img(x1.clone().to(CUDA)).cpu().detach()
-    #     for i in range(15):
-    #         img = x1[i]
-    #         img_ = x1_[i]
-    #         if args.dataset in ['colour_triplets', 'colour']:
-    #             img = img.T
-    #             img_ = img_.T
-    #         axes[i, 0].imshow(img.squeeze(), cmap="Greys_r")
-    #         axes[i, 0].axis('off')
+    with torch.no_grad():
+        num_samples = 15
+        x1, *_ = next(iter(test_data))
+        if args.dataset in ['colour_triplets', 'colour']:
+            x1 = x1.reshape(64, 3, 64, 64)
+        else:
+            x1 = x1.reshape(64, 1, 64, 64)
+        fig, axes = plt.subplots(num_samples, 2, figsize=(15,15), sharex=True, sharey=True)
+        x1_ = vae.reconstruct_img(x1.clone().to(CUDA)).cpu().detach()
+        for i in range(15):
+            img = x1[i]
+            img_ = x1_[i]
+            if args.dataset in ['colour_triplets', 'colour']:
+                img = img.T
+                img_ = img_.T
+            axes[i, 0].imshow(img.squeeze(), cmap="Greys_r")
+            axes[i, 0].axis('off')
 
-    #         axes[i, 1].imshow(img_.squeeze(), cmap="Greys_r")
-    #         axes[i, 1].axis('off')
+            axes[i, 1].imshow(img_.squeeze(), cmap="Greys_r")
+            axes[i, 1].axis('off')
 
-    #     axes[0, 0].set_title("source")
-    #     axes[0, 1].set_title("recon")
-    #     plt.tight_layout()
-    #     plt.axis('off')
-    #     writer.add_figure('test/reconstructions', fig)
+        axes[0, 0].set_title("source")
+        axes[0, 1].set_title("recon")
+        plt.tight_layout()
+        plt.axis('off')
+        writer.add_figure('test/reconstructions', fig)
 
-        # # DCI disentanglement metric
+        # DCI disentanglement metric
         # print("DCI---")
         # dci_score = dci.compute_dci(vae, args.dataset)
         # for label, metric in dci_score.items():

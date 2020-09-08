@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import torchvision.transforms as transforms
 import torch.distributions as dist
 from itertools import islice
+from torch.distributions.normal import Normal
 import numpy as np
 
 CUDA = torch.device('cuda')
@@ -199,13 +200,14 @@ class AdaGVAE(nn.Module):
 # TripletVAE
 class TVAE(AdaGVAE):
     def __init__(self, z_dim=10, n_channels=3, use_cuda=True, 
-                adaptive=True, k=None, gamma=1, alpha=1):
+                adaptive=True, k=None, gamma=1, alpha=1, warm_up=0):
         super().__init__(z_dim, n_channels, use_cuda, adaptive, k)
-
-        self.fc_disc = nn.Linear(1, 1)
-        self.cuda()
+        
         self.alpha = alpha
         self.gamma = gamma
+        self.cdf = Normal(torch.tensor([0.0]).to(CUDA), torch.tensor([1.0]).to(CUDA)).cdf
+        self.warm_up = warm_up
+        self.cuda()
 
     def forward(self, x1, x2, x3):
         z_loc_1, z_logvar_1 = self.encoder(x1)
@@ -222,7 +224,7 @@ class TVAE(AdaGVAE):
 
         return x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3
 
-    def batch_forward(self, data, device):
+    def batch_forward(self, data, device, step):
         x1, x2, x3, y = data
         x1 = x1.to(device).squeeze()
         x2 = x2.to(device).squeeze()
@@ -234,7 +236,7 @@ class TVAE(AdaGVAE):
         return self.loss(x1, x2, x3, x1_, x2_, x3_, 
                             z_loc_1, z_logvar_1, 
                             z_loc_2, z_logvar_2, 
-                            z_loc_3, z_logvar_3, y)
+                            z_loc_3, z_logvar_3, y, step)
 
     def batch_representation(self, x):
         z_loc, z_logvar = self.encoder(x)
@@ -250,18 +252,16 @@ class TVAE(AdaGVAE):
     def loss(self, x1, x2, x3, x1_, x2_, x3_, 
                 z_loc_1, z_logvar_1, 
                 z_loc_2, z_logvar_2, 
-                z_loc_3, z_logvar_3, pos):
+                z_loc_3, z_logvar_3, pos, step):
         # returns total_loss, recon_1, recon_2, recon_3, kl_1, kl_2, kl_3
-        r_1 = nn.functional.binary_cross_entropy_with_logits(x1_, x1, reduction='sum').div(64)
-        r_2 = nn.functional.binary_cross_entropy_with_logits(x2_, x2, reduction='sum').div(64)
-        r_3 = nn.functional.binary_cross_entropy_with_logits(x3_, x3, reduction='sum').div(64)
+        r_1 = nn.functional.binary_cross_entropy_with_logits(x1_, x1, reduction='sum').div(x1.shape[0])
+        r_2 = nn.functional.binary_cross_entropy_with_logits(x2_, x2, reduction='sum').div(x1.shape[0])
+        r_3 = nn.functional.binary_cross_entropy_with_logits(x3_, x3, reduction='sum').div(x1.shape[0])
         
         kl_1 = -0.5 * torch.sum(1 + z_logvar_1 - z_loc_1.pow(2) - z_logvar_1.exp(), 1).mean(0)
         kl_2 = -0.5 * torch.sum(1 + z_logvar_2 - z_loc_2.pow(2) - z_logvar_2.exp(), 1).mean(0)
         kl_3 = -0.5 * torch.sum(1 + z_logvar_3 - z_loc_3.pow(2) - z_logvar_3.exp(), 1).mean(0)
         
-        loss = r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3
-
         stacked_loc = torch.stack((z_loc_1, z_loc_2, z_loc_3), dim=-1)
         loc_1_ = stacked_loc[range(z_loc_1.shape[0]), :, pos[:, 0]]
         loc_2_ = stacked_loc[range(z_loc_1.shape[0]), :, pos[:, 1]]
@@ -273,15 +273,17 @@ class TVAE(AdaGVAE):
         # d(x2, x3)
         d_3 = torch.norm(loc_2_ - loc_3_, 2, 1, True)
         # fully connected nn layer
-        # log p(y|d(x1,x3)^2 - d(x1,x2)^2)
-        y = self.gamma * torch.sigmoid(self.fc_disc(d_2.pow(2) - d_1.pow(2)) * (1/self.alpha)).log().sum()
-        # log p(y|d(x2,x3)^2 - d(x1,x2)^2)
-        y_ = self.gamma * torch.sigmoid(self.fc_disc(d_3.pow(2) - d_1.pow(2)) * (1/self.alpha)).log().sum()
-        # y = nn.functional.binary_cross_entropy_with_logits(y_1, torch.ones(64, 1).to(CUDA), reduction='sum').div(64)
-        # y_ = nn.functional.binary_cross_entropy_with_logits(y_2, torch.ones(64, 1).to(CUDA)*-1., reduction='sum').div(64)
-
-        loss -= y #- y_
-        loss -= y_
+        # log p(d(x1,x3)^2 - d(x1,x2)^2)c
+        if step > self.warm_up and self.training:
+            gamma = self.gamma
+        else:
+            gamma = step / self.warm_up
+        y = self.cdf((d_2.pow(2) - d_1.pow(2)) * (1/self.alpha))
+        y = y.clamp(min=1e-18).log().sum()
+        # log p(d(x2,x3)^2 - d(x1,x2)^2)
+        y_ = self.cdf((d_3.pow(2) - d_1.pow(2)) * (1/self.alpha))
+        y_ = y_.clamp(min=1e-18).log().sum()
+        loss = r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3 - (gamma * y) - (gamma *y_)
         return loss, r_1, r_2, r_3, kl_1, kl_2, kl_3, y, y_
 
 
@@ -411,7 +413,7 @@ def train_steps(model, dataset, optimizer, num_steps=300000, device=CUDA,
     dataset_len = num_steps * dataset.batch_size
     for batch_id, data in enumerate(dataset):
         optimizer.zero_grad()
-        loss, (*metrics) = model.batch_forward(data, device=device)
+        loss, (*metrics) = model.batch_forward(data, step=batch_id, device=device)
         loss.backward()
         optimizer.step()
 
@@ -491,7 +493,7 @@ def test(model, dataset, verbose=True, device=CUDA, metrics_labels=None, writer=
     print(len(dataset.dataset))
     with torch.no_grad():
         for batch_id, data in enumerate(dataset):
-            loss, (*metrics) = model.batch_forward(data, device=device)
+            loss, (*metrics) = model.batch_forward(data, device=device, step=0)
             metrics_mean.append([x.item() for x in metrics])
             test_loss += loss.item()
 
