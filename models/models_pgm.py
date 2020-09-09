@@ -161,7 +161,7 @@ def train_steps(model, dataset, val_dataset, optimizer, device=CUDA,
 
         # train_loss += loss.item()
         # metrics_mean.append([x.item() for x in metrics])
-        if batch_id % eval_iter == 0:
+        if batch_id % eval_iter == 0 or batch_id == dataset_len-1:
             data = next(iter(val_dataset))
             (_, _, y, _, _) = data
             _ , scores = model.batch_forward(data, device)

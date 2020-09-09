@@ -24,8 +24,10 @@ parser.add_argument("--test", action="store_true")
 parser.add_argument("--save", action="store_true")
 parser.add_argument("--experiment_name", type=str, default='')
 parser.add_argument("--experiment_id", type=int, default=0)
+parser.add_argument("--gamma", type=int, default=1)
+parser.add_argument("--alpha", type=float, default=1)
 args = parser.parse_args()
-np.random.seed(args.experiment_id)
+np.random.seed(100 + args.experiment_id)
 
 vae_dict = {
     'tvae': TVAE,
@@ -54,10 +56,11 @@ model = WReN()
 if args.values:
     model = WReN(embedder='values')
 if args.model_path:
-    vae = vae_dict[args.embedding_model](n_channels=3)
+    vae = vae_dict[args.embedding_model](n_channels=3, gamma=args.gamma, alpha=args.alpha)
     vae.load_state_dict(torch.load(args.model_path))
     for p in vae.parameters():
         p.requires_grad = False
+    vae.eval()
     model = WReN(embedder=vae)
 
 print(args)
