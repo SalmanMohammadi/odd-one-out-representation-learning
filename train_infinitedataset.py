@@ -28,6 +28,7 @@ parser.add_argument("--load", action="store_true")
 parser.add_argument("--gamma", type=int, default=1)
 parser.add_argument("--alpha", type=float, default=1)
 parser.add_argument("--warm_up_steps", type=int, default=-1)
+parser.add_argument("--k", type=int, default=None)
 args = parser.parse_args()
 np.random.seed(args.experiment_id)
 
@@ -69,7 +70,7 @@ vae = None
 labels = label_dict[args.model]
 if args.dataset in ['colour_triplets', 'colour']:
     train_data, test_data = rpm.get_dsprites(train_size=args.steps, test_size=10000, batch_size=64,
-                                            dataset=datasets[args.dataset])
+                                            dataset=datasets[args.dataset], k=args.k)
     vae = model_dict[args.model](n_channels=3, gamma=args.gamma, alpha=args.alpha, warm_up=args.warm_up_steps)
 else:
     train_data, test_data = dsprites.get_dsprites(train_size=args.steps, test_size=10000, batch_size=64, k=1,
