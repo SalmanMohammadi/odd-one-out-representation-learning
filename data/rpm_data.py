@@ -319,7 +319,7 @@ class PGM(IterableDataset):
     def modify_solutions(self, matrix, relations_idx, num_relations):
         alt_mat = np.copy(matrix)
         init_solutions = np.copy(matrix[:, -1, -1, :])
-        
+
         # randomly sample a single relation to change
         active_relations = np.split(np.nonzero(relations_idx)[1], np.cumsum(num_relations))[:-1]
         m_relations_idx = np.array([np.random.choice(x) for x in active_relations])
@@ -357,7 +357,8 @@ class PGM(IterableDataset):
         for i in range(self.num_batches):
             yield self.sample()
 
-def get_datasets(train_size=100000, test_size=10000, batch_size=32):
+def get_datasets(train_size=100000, test_size=5000
+, batch_size=32):
     dsprites_loader = ColourDSpritesLoader(npz_path='./data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
     dsprites_reasoning = QuantizedColourDSprites(dsprites_loader=dsprites_loader)
     train_abstract_reasoning = DataLoader(PGM(dsprites_reasoning, num_batches=train_size, batch_size=batch_size), 
