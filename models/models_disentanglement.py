@@ -200,7 +200,7 @@ class AdaGVAE(nn.Module):
 # TripletVAE
 class TVAE(AdaGVAE):
     def __init__(self, z_dim=10, n_channels=3, use_cuda=True, 
-                adaptive=True, k=None, gamma=1, alpha=1, warm_up=0):
+                adaptive=True, k=None, gamma=1, alpha=1, warm_up=-1):
         super().__init__(z_dim, n_channels, use_cuda, adaptive, k)
         
         self.alpha = alpha
@@ -419,7 +419,7 @@ def train_steps(model, dataset, optimizer, num_steps=300000, device=CUDA,
 
         # train_loss += loss.item()
         # metrics_mean.append([x.item() for x in metrics])
-        if ((batch_id % log_interval == 0) or (batch_id == dataset_len-1) and verbose:
+        if ((batch_id % log_interval == 0) or (batch_id == dataset_len-1)) and verbose:
             print('Train step: {}, loss: {}'.format(
                 batch_id, loss.item()))
             if metrics_labels:

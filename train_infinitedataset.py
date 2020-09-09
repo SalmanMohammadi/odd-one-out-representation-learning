@@ -27,7 +27,7 @@ parser.add_argument("--experiment_id", type=int, default=0)
 parser.add_argument("--load", action="store_true")
 parser.add_argument("--gamma", type=int, default=1)
 parser.add_argument("--alpha", type=float, default=1)
-parser.add_argument("--warm_up_steps", type=int, default=0)
+parser.add_argument("--warm_up_steps", type=int, default=-1)
 args = parser.parse_args()
 np.random.seed(args.experiment_id)
 
