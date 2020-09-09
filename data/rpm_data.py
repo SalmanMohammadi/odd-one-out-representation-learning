@@ -286,7 +286,7 @@ class PGM(IterableDataset):
 
         # sample number of active relations
         if self.n_relations:
-            num_relations = np.ones((self.batch_size)) * self.n_relations
+            num_relations = np.ones((self.batch_size), dtype=int) * self.n_relations
         else:
             num_relations = 1 + np.random.choice(3, size=self.batch_size)
         
@@ -310,7 +310,7 @@ class PGM(IterableDataset):
         solutions = np.zeros((self.batch_size, 5, len(self.factors)), dtype=int)
         for i in range(5):
             solutions[:, i] = self.modify_solutions(matrix, relations_idx, num_relations)
-
+            
         # randomly sample positions where the correct answer should be inserted
         positions = np.random.choice(6, size=self.batch_size)
 
@@ -323,40 +323,32 @@ class PGM(IterableDataset):
         # sample ground truth factors
         matrix_observations = self.dataset.latent_to_observations(matrix.reshape(-1, 6)).reshape(-1, 3, 3, 3, 64, 64)
         alternative_observations = self.dataset.latent_to_observations(alternative_solutions.reshape(-1, 6)).reshape(-1, 6, 3, 64, 64)
-        
-        # place correct answer into alternative answer set
-        alternative_observations[~idx] = matrix_observations[:, -1, -1]    
-
-        # embed factor values 
-        matrix_values = torch.tensor(self.embed_factors(matrix.reshape(-1, 6)).reshape(-1, 3, 3, 6), dtype=torch.float32)
-        alternative_values = torch.tensor(self.embed_factors(alternative_solutions.reshape(-1, 6)).reshape(-1, 6, 6), dtype=torch.float32)
+        alternative_observations[~idx] = matrix_observations[:, -1, -1]        
         matrix_observations = torch.tensor(matrix_observations, dtype=torch.float32)
         alternative_observations = torch.tensor(alternative_observations, dtype=torch.float32)
         positions = torch.tensor(positions, dtype=torch.int64)
-        
+
+        matrix_values = self.embed_factors(matrix.reshape(-1, 6)).reshape(-1, 3, 3, 6)
+        alternative_values = self.embed_factors(alternative_solutions.reshape(-1, 6)).reshape(-1, 6, 6)
         return matrix_observations, alternative_observations, positions, matrix_values, alternative_values
 
     def modify_solutions(self, matrix, relations_idx, num_relations):
         alt_mat = np.copy(matrix)
         init_solutions = np.copy(matrix[:, -1, -1, :])
 
-        # find samples which have more than 1 active relation to resample
-        idx = np.sum(relations_idx, 1) > 1
         # randomly sample a single relation to change
-        active_relations = np.split(np.nonzero(relations_idx[idx])[1], np.cumsum(num_relations[idx]))[:-1]
-        m_relations_idx = np.zeros((self.batch_size), dtype=int)
-        m_relations_idx[idx] = np.array([np.random.choice(x) for x in active_relations])
-        new_solutions = np.ones((self.batch_size), dtype=int) * -1
+        active_relations = np.split(np.nonzero(relations_idx)[1], np.cumsum(num_relations))[:-1]
+        m_relations_idx = np.array([np.random.choice(x) for x in active_relations])
+        new_solutions = np.ones((self.batch_size), dtype=int)
         # sample new fixed random factor per item in batch until
         # there are no samples which have the same factor as the original
+        idx = np.ones(self.batch_size, dtype=bool)
         while np.any(idx):
             factors_ = np.hstack([np.random.choice(factor, size=sum(idx))[:, None] for factor in self.factors])
             new_solutions[idx] = factors_[range(sum(idx)), m_relations_idx[idx]]
             idx[idx] = new_solutions[idx] == init_solutions[idx, m_relations_idx[idx]] 
         
-        idx = np.sum(relations_idx, 1) > 1
-        init_solutions[idx, m_relations_idx[idx]] = new_solutions[idx]
-        
+        init_solutions[:, m_relations_idx] = new_solutions
         # resample non active relations
         for j, factor in enumerate(self.factors):
             # get indices for constant relations for the current batch
@@ -381,7 +373,8 @@ class PGM(IterableDataset):
         for i in range(self.num_batches):
             yield self.sample()
 
-def get_datasets(train_size=100000, test_size=10000, batch_size=32):
+def get_datasets(train_size=100000, test_size=5000
+, batch_size=32):
     dsprites_loader = ColourDSpritesLoader(npz_path='./data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
     dsprites_reasoning = QuantizedColourDSprites(dsprites_loader=dsprites_loader)
     train_abstract_reasoning = DataLoader(PGM(dsprites_reasoning, num_batches=train_size, batch_size=batch_size), 
