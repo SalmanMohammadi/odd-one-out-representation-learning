@@ -109,12 +109,12 @@ class ColourDSpritesTriplets(IterableDataset):
         
         # randomly sample positions
         positions = np.random.rand(self.batch_size, 3).argpartition(2,axis=1)
-        # new_x = np.zeros((self.batch_size, 3, 64, 64, 3))
-        # new_x[range(self.batch_size), :, :, :, positions[:, 0]] = X1
-        # new_x[range(self.batch_size), :, :, :, positions[:, 1]] = X2
-        # new_x[range(self.batch_size), :, :, :, positions[:, 2]] = X3
+        new_x = np.zeros((self.batch_size, 3, 64, 64, 3))
+        new_x[range(self.batch_size), :, :, :, positions[:, 0]] = X1
+        new_x[range(self.batch_size), :, :, :, positions[:, 1]] = X2
+        new_x[range(self.batch_size), :, :, :, positions[:, 2]] = X3
 
-        # X1, X2, X3 = map(np.squeeze, np.split(new_x, 3, axis=-1))
+        X1, X2, X3 = map(np.squeeze, np.split(new_x, 3, axis=-1))
         X1 = torch.tensor(X1, dtype=torch.float32)
         
         X2 = torch.tensor(X2, dtype=torch.float32)
@@ -131,33 +131,26 @@ class ColourDSpritesTriplets(IterableDataset):
         # sample k2 factors which will need to be resampled between x1,x3 and x2,x3 ~unif(4, 6)
 
         k_idx_1 = np.zeros((self.batch_size, self.factors_sizes.size), dtype=int)
-        k_idx_2 = np.zeros((self.batch_size, self.factors_sizes.size), dtype=int)
-
         if self.k == 1:
             num_relations_1 = np.ones((self.batch_size), dtype=int)
-            num_relations_2 = np.ones((self.batch_size), dtype=int) * 6
         elif self.k:
-            num_relations_1 = np.ones((self.batch_size), dtype=int) * self.k
-            num_relations_2 = np.ones((self.batch_size), dtype=int) * (self.factors_sizes.size - self.k)
+            num_relations_1 = np.ones((self.batch_size), dtype=int) * self.k_idx_1
         else:
             num_relations_1 = np.random.randint(1, 4, size=self.batch_size, dtype=int)
-            num_relations_2 = np.random.randint(4, 7, size=self.batch_size, dtype=int)
 
         for i in range(1, self.factors_sizes.size):
             idx_1 = num_relations_1 == i
-            idx_2 = num_relations_2 == i
             if sum(idx_1) > 0:
                 relations_factors = np.random.rand(sum(idx_1), self.factors_sizes.size).argpartition(1,axis=1)[:,:i]
                 k_idx_1[idx_1, relations_factors.T] = 1
-            if sum(idx_2) > 0:
-                relations_factors = np.random.rand(sum(idx_2), self.factors_sizes.size).argpartition(1,axis=1)[:,:i]
-                k_idx_2[idx_2, relations_factors.T] = 1
 
+        k_idx_2 = (~k_idx_1) + 2
         z_2 = np.copy(z_1)
         z_3 = np.copy(z_1)
-        for i, lat_size in enumerate(factors):
+        for i, lat_size in enumerate(self.factors_sizes):
             resampled_k1 = k_idx_1[:, i].astype(bool)
             resampled_k2 = k_idx_2[:, i].astype(bool)
+
             z_2[resampled_k1, i] = np.random.randint(lat_size, size=sum(resampled_k1))
             z_3[resampled_k2, i] = np.random.randint(lat_size, size=sum(resampled_k2))
 

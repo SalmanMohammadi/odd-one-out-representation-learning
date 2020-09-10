@@ -85,7 +85,7 @@ if not args.test:
                 metrics_labels=labels, num_steps=args.steps)
     if args.save:
         torch.save(vae.state_dict(), model_path + ".pt")
-
+        
 if not args.train:
     if args.load:
         vae.load_state_dict(torch.load( model_path + ".pt"))
