@@ -45,7 +45,6 @@ def predict_triplets(X, y, folds=5):
         pred_test = np.array(model.predict(X_test))
         train_loss.append(np.sum(pred == y_train[:, -1]) / X_train.shape[0])
         test_loss.append(np.sum(pred_test == y_test[:, -1]) / X_test.shape[0])
-        # print(X_test.shape[0], X_train.shape[0])
 
     return train_loss, test_loss
 
@@ -68,6 +67,7 @@ if __name__ == '__main__':
     # vae.load_state_dict(torch.load(path))
     # (0.8804833333333333, 0.00548568845066668, 0.8496666666666666, 0.010088497300281043)
 
+<<<<<<< HEAD
     def eval_model(path, id):
         print(path)
         if "tvae" in path:
@@ -99,6 +99,14 @@ if __name__ == '__main__':
     # # (0.8322499999999999, 0.005524440645390664, 0.7926, 0.009534498763263151)
     # print(path)
     # print(calculate_triplet_score(vae))
+=======
+    vae = VAE(n_channels=3, alpha=1, gamma=1)
+    path = "../tmp/vae/0.pt"
+    vae.load_state_dict(torch.load(path))
+    # (0.8322499999999999, 0.005524440645390664, 0.7926, 0.009534498763263151)
+    print(path)
+    print(calculate_triplet_score(vae))
+>>>>>>> a9b1898f8d457a9478de00348311ecd694d9968d
     
 # ./tmp/vae/abstract_reasoning/0.pt
 # {'mean_train': 0.8270083333333333, 'std_train': 0.006882919680871891, 'mean_test': 0.8067, 'std_test': 0.006066666666666678}
