@@ -116,7 +116,6 @@ class ColourDSpritesTriplets(IterableDataset):
 
         X1, X2, X3 = map(np.squeeze, np.split(new_x, 3, axis=-1))
         X1 = torch.tensor(X1, dtype=torch.float32)
-        
         X2 = torch.tensor(X2, dtype=torch.float32)
         X3 = torch.tensor(X3, dtype=torch.float32)
         positions = torch.tensor(positions, dtype=torch.long)
@@ -383,7 +382,7 @@ def get_dsprites(train_size=300000, test_size=10000, batch_size=64, k=1, dataset
     """
     Returns train and test DSprites dataset.
     """
-    dsprites_loader = ColourDSpritesLoader(npz_path='./data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
+    dsprites_loader = ColourDSpritesLoader(npz_path='../data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
     train_data = DataLoader(dataset(size=train_size, dsprites_loader=dsprites_loader, k=k, batch_size=batch_size),
                             batch_size=1)#, pin_memory=True, num_workers=16)
     test_data = DataLoader(dataset(size=test_size, dsprites_loader=dsprites_loader, k=k, batch_size=batch_size),

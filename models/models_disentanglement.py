@@ -52,7 +52,7 @@ class Decoder(nn.Module):
         return x
 
 class VAE(nn.Module):
-    def __init__(self, z_dim=10, n_channels=3, use_cuda=True, gamma=None, alpha=None):
+    def __init__(self, z_dim=10, n_channels=3, use_cuda=True, gamma=None, alpha=None, warm_up=None):
         super().__init__()
         # create the encoder and decoder networks
         self.encoder = Encoder(z_dim, n_channels)
@@ -75,7 +75,7 @@ class VAE(nn.Module):
 
         return x_, z_loc, z_logvar
     
-    def batch_forward(self, data, device=CUDA):
+    def batch_forward(self, data, device=CUDA, step=None):
         x, _ = data
         x = x.to(device).squeeze(axis=0)
         x_, z_loc, z_logvar = self(x)
