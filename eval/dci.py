@@ -8,7 +8,7 @@ from torch.utils.tensorboard import SummaryWriter
 import sys
 sys.path.append('../')
 import models
-from models.models_disentanglement import AdaGVAE, batch_sample_latents
+from models.models_disentanglement import AdaGVAE, TVAE, batch_sample_latents
 from data import dsprites_data as dsprites
 from data import rpm_data as rpm
 from data.dsprites_data import IterableDSPritesIID
@@ -37,11 +37,9 @@ def compute_dci(model, dataset, train_size=10000, test_size=5000, batch_size=16)
     assert importance_matrix.shape[1] == train_y.shape[1]
 
     scores = {}
-    scores["informativeness_train"] = train_err
-    scores["informativeness_test"] = test_err
-    scores["disentanglement"] = disentanglement(importance_matrix)
+    # scores["disentanglement"] = disentanglement(importance_matrix)
     scores["completeness"] = completeness(importance_matrix)
-    print(scores)
+    # print(scores)
     return scores
     
 def disentanglement(importance_matrix):
@@ -79,7 +77,42 @@ def compute_importance(x_train, y_train, x_test, y_test):
 
 # def compute_dci(loc_train, y_train, loc_test, y_test):
 if __name__ == '__main__':
-    vae = AdaGVAE(n_channels=1)
-    vae.load_state_dict(torch.load("../tmp/adagvae/inf/k=rnd+var/2.pt"))
-    print(compute_dci(vae))
+    
+    def eval_model(path, id):
+        print(path)
+        vae = TVAE(n_channels=3)
+        writer = SummaryWriter(log_dir=path)
+        vae.load_state_dict(torch.load(path+".pt"))
+        for label, metric in compute_dci(vae, dataset='colour').items():
+            print(label, ":", metric)
+            writer.add_scalar(label, metric, id)
+
+        writer.flush()
+        writer.close()
+
+    paths =[
+        "../tmp/tvae/gamma=0+k=1/",
+        "../tmp/tvae/gamma=0+k=rnd/",
+        "../tmp/tvae/gamma=1+k=1/",
+        "../tmp/tvae/gamma=1+k=rnd/",
+        "../tmp/vae/",
+    ]
+    for path in paths:
+        for i in [4]:
+            eval_model(path+str(i), i)
+
+    # vae = TVAE(n_channels=3)
+    # vae.load_state_dict(torch.load("../tmp/tvae/gamma=1+k=rnd/1.pt"))
+    # print(compute_dci(vae, dataset='colour'))
+    # vae = TVAE(n_channels=3)
+    # vae.load_state_dict(torch.load("../tmp/tvae/gamma=1+k=rnd/2.pt"))
+    # print(compute_dci(vae, dataset='colour'))
+    
+    # vae = TVAE(n_channels=3)
+    # vae.load_state_dict(torch.load("../tmp/tvae/gamma=1+k=rnd/3.pt"))
+    # print(compute_dci(vae, dataset='colour'))
+
+    # vae = TVAE(n_channels=3)
+    # vae.load_state_dict(torch.load("../tmp/tvae/gamma=1+k=rnd/4.pt"))
+    # print(compute_dci(vae, dataset='colour'))
     

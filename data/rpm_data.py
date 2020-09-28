@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
+from PIL import Image
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 
 OBJECT_COLORS = np.array(
@@ -390,17 +391,48 @@ def get_dsprites(train_size=300000, test_size=10000, batch_size=64, k=1, dataset
                             batch_size=1)#, pin_memory=True, num_workers=16)                    
     return train_data, test_data
 
-def show_task(matrix, alternative_solutions, y):
-    fig, axes = plt.subplots(3, 3)
+def show_task(matrix, alternative_solutions, y, l):
+    import matplotlib.transforms as mtrans
+
+    print(y)
+    image = np.asarray(Image.open("q.png"))
+    fig, axes = plt.subplots(5, 3, figsize=(7, 10))
     for i in range(3):
         for j in range(3):
-            axes[i][j].imshow(matrix[i][j].T)
-    fig, axes = plt.subplots(2, 3)
+            if i == j == 2:
+                axes[i][j].imshow(image)
+            else:
+                axes[i][j].imshow(matrix[i][j].T)
+            axes[i][j].grid(False)
+            axes[i][j].set_xticks([])
+            axes[i][j].set_yticks([])        
+    # fig, axes = plt.subplots(2, 3)
     alternative_solutions = alternative_solutions.reshape(2, 3, 3, 64, 64)
-    for i in range(2):
+    print(alternative_solutions.shape)
+    for i in range(3, 5):
         for j in range(3):
-            axes[i][j].imshow(alternative_solutions[i][j].T)
-    plt.show()
+            axes[i][j].imshow(alternative_solutions[i-3][j].T)
+            axes[i][j].grid(False)
+            axes[i][j].set_xticks([])
+            axes[i][j].set_yticks([])
+
+    plt.tight_layout()
+    r = fig.canvas.get_renderer()
+    get_bbox = lambda ax: ax.get_tightbbox(r).transformed(fig.transFigure.inverted())
+    bboxes = np.array(list(map(get_bbox, axes.flat)), mtrans.Bbox).reshape(axes.shape)
+
+    #Get the minimum and maximum extent, get the coordinate half-way between those
+    ymax = np.array(list(map(lambda b: b.y1, bboxes.flat))).reshape(axes.shape).max(axis=1)
+    ymin = np.array(list(map(lambda b: b.y0, bboxes.flat))).reshape(axes.shape).min(axis=1)
+    ys = np.c_[ymax[1:], ymin[:-1]].mean(axis=1)
+
+    # Draw a horizontal lines at those coordinates
+    # for y in ys:
+    line = plt.Line2D([0.05,0.95],[ys[-2]+.001,ys[-2]+.001], transform=fig.transFigure, color="blue", linewidth=3)
+    fig.add_artist(line)
+    
+    plt.savefig("apx/appendx" + str(y) + "i=" + str(l) + ".png")
+    # plt.show()
 
 # class IterableDSpritesIIDPairs(IterableDataset):
 #     def __init__(self, dsprites_loader, size=300000, batch_size=64, k=None):
@@ -420,25 +452,33 @@ if __name__ == '__main__':
     data = QuantizedColourDSprites(dsprites_loader=dsprites_loader)
     pgm_data = DataLoader(PGM(data, num_batches=300000, batch_size=32), batch_size=1)
     x, x_, y, _, _ = next(iter(pgm_data))
-    x, x_, y = x.squeeze(), x_.squeeze(), y.squeeze()
+    x, x_, y = x.squeeze().numpy(), x_.squeeze().numpy(), y.squeeze().numpy()
     print(x.shape)
-    show_task(x[0], x_[0], y[0])
+    for i in range(9):
+        show_task(x[i], x_[i], y[i], i)
+    # show_task(x[0], x_[0], y[0], 0)
+    # show_task(x[1], x_[1], y[1], 1)
+    # show_task(x[2], x_[2], y[2], 2)
 
     # dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
-    # data = DataLoader(ColourDSpritesTriplets(dsprites_loader=dsprites_loader, batch_size=5, k=1), batch_size=1)
+    # data = DataLoader(ColourDSpritesTriplets(dsprites_loader=dsprites_loader, batch_size=5, k=None), batch_size=1)
     # x1, x2, x3, pos = next(iter(data))
     # print("pos", pos)
     # print(x1.shape)
     # x1 = x1.reshape(5, 3, 64, 64)
     # x2 = x2.reshape(5, 3, 64, 64)
     # x3 = x3.reshape(5, 3, 64, 64)
-    # fig, axes = plt.subplots(5, 3, sharex=True, sharey=True)
+    # fig, axes = plt.subplots(5, 3, sharex=True, sharey=True, figsize=(7, 10))
     # for i in range(5):
     #     axes[i][0].imshow(x1[i].T, cmap='Greys_r')
     #     axes[i][1].imshow(x2[i].T, cmap='Greys_r')
     #     axes[i][2].imshow(x3[i].T, cmap='Greys_r')
-    # axes[0][0].set_title("A")
-    # axes[0][1].set_title("B")
-    # axes[0][2].set_title("X")
-    # fig.subplots_adjust()
-    # plt.show()
+    #     [x.grid(False) for x in axes[i]]
+    #     [x.set_xticks([]) for x in axes[i]]
+    #     [x.set_yticks([]) for x in axes[i]]
+
+    # plt.tight_layout()
+    # fig.subplots_adjust(wspace=0, hspace=0.05)#, 
+    #                     # top=0.97, bottom=0.05, 
+    #                     # left=0, right=0.31)
+    # plt.savefig("triplet2.png")

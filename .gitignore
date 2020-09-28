@@ -5,3 +5,4 @@ __pycache__
 tmp
 *.ipynb
 *.sh
+*.png

@@ -72,9 +72,9 @@ if not args.test:
     if args.save:
         torch.save(model.state_dict(), model_path + ".pt")
 
-if not args.train:
-    _, metrics = models.models_pgm.test(model, test_data, verbose=True, metrics_labels=labels, 
-                            writer=writer, experiment_id=args.experiment_id)
+# if not args.train:
+#     _, metrics = models.models_pgm.test(model, test_data, verbose=True, metrics_labels=labels, 
+#                             writer=writer, experiment_id=args.experiment_id)
 
 writer.close()
 
