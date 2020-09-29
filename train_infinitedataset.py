@@ -10,7 +10,7 @@ from models.models_disentanglement import AdaGVAE, TVAE, AdaTVAE, VAE
 from data import rpm_data as rpm
 from data import dsprites_data as dsprites
 import matplotlib.pyplot as plt
-from eval import dci, triplets
+from eval import dci, triplets, bvae, factorvae
 from torch.utils.tensorboard import SummaryWriter 
 
 CUDA = torch.device('cuda')
@@ -120,11 +120,11 @@ if not args.train:
         writer.add_figure('test/reconstructions', fig)
 
         # DCI disentanglement metric
-        # print("DCI---")
-        # dci_score = dci.compute_dci(vae, args.dataset)
-        # for label, metric in dci_score.items():
-        #     print(label, ":", metric)
-        #     writer.add_scalar(label, metric, args.experiment_id)
+        print("DCI---")
+        dci_score = dci.compute_dci(vae, args.dataset)
+        for label, metric in dci_score.items():
+            print(label, ":", metric)
+            writer.add_scalar(label, metric, args.experiment_id)
 
         # triplet metric
         print("TRIPLET---")
@@ -132,6 +132,21 @@ if not args.train:
         for label, metric in scores.items():
             print(label, ":", metric)
             writer.add_scalar(label, metric, args.experiment_id)
+        
+        # bvae metric
+        print("BVAE---")
+        scores = bvae.calculate_b_vae_score(vae)
+        for label, metric in scores.items():
+            print(label, ":", metric)
+            writer.add_scalar(label, metric, args.experiment_id)
+
+        # factorvae metric
+        print("factorvae---")
+        scores = factorvae.compute_factorvae_score(vae)
+        for label, metric in scores.items():
+            print(label, ":", metric)
+            writer.add_scalar(label, metric, args.experiment_id)
+
 
 writer.close()
 

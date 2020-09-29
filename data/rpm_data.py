@@ -40,15 +40,20 @@ class ColourDSprites(IterableDataset):
 
     # generative random sampler
     def sample(self):
-        c, z = self.sample_latent()
-        z_idx = self.latent_to_index(z)
-        X = self.dsprites_loader.X[z_idx]
+        z = np.hstack(self.sample_latent())
+        X = self.latent_to_observations(z)
 
-        background_color = np.expand_dims(np.expand_dims(BACKGROUND_COLORS[c[:,0]], 2), 2)
-        object_color = np.expand_dims(np.expand_dims(OBJECT_COLORS[c[:,1]], 2), 2)
+        # X = self.dsprites_loader.X[z_idx]
+
+        # background_color = np.expand_dims(np.expand_dims(BACKGROUND_COLORS[c[:,0]], 2), 2)
+        # object_color = np.expand_dims(np.expand_dims(OBJECT_COLORS[c[:,1]], 2), 2)
         
-        X = X * object_color + (1. - X) * background_color
-        return torch.tensor(X, dtype=torch.float32), np.hstack((c, z[:,1:]))
+        # X = X * object_color + (1. - X) * background_color
+        return torch.tensor(X, dtype=torch.float32), z# np.hstack((c, z[:,1:]))
+     
+    @property
+    def factors_sizes(self):
+        return np.array([BACKGROUND_COLORS.shape[0], OBJECT_COLORS.shape[0]] + list(self.latents_sizes[1:]))
         
     def __iter__(self):
         for i in range(self.num_batches):
@@ -60,12 +65,24 @@ class ColourDSprites(IterableDataset):
     def latent_to_index(self, latents):
         return np.dot(latents, self.latents_bases).astype(int)
     
+    def colourize(self, c, X):
+        c = c.astype(int)
+        background_color = np.expand_dims(np.expand_dims(BACKGROUND_COLORS[c[:,0]], 2), 2)
+        object_color = np.expand_dims(np.expand_dims(OBJECT_COLORS[c[:,1]], 2), 2)
+        
+        return X * object_color + (1. - X) * background_color
+
+    def latent_to_observations(self, latents):
+        c, z = latents[:, :2], latents[:, 2:]
+        X = self.dsprites_loader.X[self.latent_to_index(np.insert(z, 0, 0, axis=1))]
+        return self.colourize(c, X)
+
     def sample_latent(self):
         colours = np.zeros((self.batch_size, 2), dtype=np.int32)
         colours[:, 0] = np.random.randint(BACKGROUND_COLORS.shape[0], size=self.batch_size)
         colours[:, 1] = np.random.randint(OBJECT_COLORS.shape[0], size=self.batch_size)
-        samples = np.zeros((self.batch_size, self.latents_sizes.size))
-        for lat_i, lat_size in enumerate(self.latents_sizes):
+        samples = np.zeros((self.batch_size, self.latents_sizes.size-1))
+        for lat_i, lat_size in enumerate(self.latents_sizes[1:]):
             samples[:, lat_i] = np.random.randint(lat_size, size=self.batch_size)
 
         return colours, samples
@@ -105,7 +122,7 @@ class ColourDSpritesTriplets(IterableDataset):
         return np.array([BACKGROUND_COLORS.shape[0], OBJECT_COLORS.shape[0]] + list(self.latents_sizes[1:]))
     
     def sample(self):
-        z_1, z_2, z_3 = self.sample_latent_triplets()
+        z_1, z_2, z_3 = self.sample_latent()
         X1, X2, X3 = map(self.latent_to_observations, (z_1, z_2, z_3))
         
         # randomly sample positions
@@ -122,7 +139,7 @@ class ColourDSpritesTriplets(IterableDataset):
         positions = torch.tensor(positions, dtype=torch.long)
         return X1, X2, X3, positions
 
-    def sample_latent_triplets(self):
+    def sample_latent(self):
         # randomly sample the factor values of the first observation
         z_1 = np.zeros((self.batch_size, self.factors_sizes.size))
         for lat_i, lat_size in enumerate(self.factors_sizes):
@@ -383,7 +400,7 @@ def get_dsprites(train_size=300000, test_size=10000, batch_size=64, k=1, dataset
     """
     Returns train and test DSprites dataset.
     """
-    dsprites_loader = ColourDSpritesLoader(npz_path='../data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
+    dsprites_loader = ColourDSpritesLoader(npz_path='./data/DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
     train_data = DataLoader(dataset(size=train_size, dsprites_loader=dsprites_loader, k=k, batch_size=batch_size),
                             batch_size=1)#, pin_memory=True, num_workers=16)
     test_data = DataLoader(dataset(size=test_size, dsprites_loader=dsprites_loader, k=k, batch_size=batch_size),

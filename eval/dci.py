@@ -37,7 +37,7 @@ def compute_dci(model, dataset, train_size=10000, test_size=5000, batch_size=16)
     assert importance_matrix.shape[1] == train_y.shape[1]
 
     scores = {}
-    # scores["disentanglement"] = disentanglement(importance_matrix)
+    scores["disentanglement"] = disentanglement(importance_matrix)
     scores["completeness"] = completeness(importance_matrix)
     # print(scores)
     return scores
