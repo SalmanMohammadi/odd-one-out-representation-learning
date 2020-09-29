@@ -16,6 +16,7 @@ CUDA = torch.device('cuda')
 # set random seed
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--logdir", default="tmp")
 parser.add_argument("--values", action='store_true')
 parser.add_argument("--embedding_model", type=str, default='')
 parser.add_argument("--model_path", type=str, default='')
@@ -45,7 +46,7 @@ if args.train and args.test:
 experiment_id = '/' + str(args.experiment_id)
 experiment_name = '/' + args.experiment_name if args.experiment_name else ''
 embedding_model = '/' + args.embedding_model if args.embedding_model else ''
-model_path = 'tmp/pgm' + embedding_model + experiment_name + experiment_id
+model_path = args.logdir + '/pgm' + embedding_model + experiment_name + experiment_id
 
 labels = ['accuracy']
 train_data, val_data, test_data = rpm.get_datasets()
