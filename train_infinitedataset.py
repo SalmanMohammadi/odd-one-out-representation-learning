@@ -16,6 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 CUDA = torch.device('cuda')
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--logdir", default="tmp")
 parser.add_argument("--model", type=str)
 parser.add_argument("--train", action="store_true")
 parser.add_argument("--test", action="store_true")
@@ -45,7 +46,7 @@ if args.warm_up_steps >= args.steps:
 
 experiment_id = '/' + str(args.experiment_id)
 experiment_name = '/' + args.experiment_name if args.experiment_name else ''
-model_path = 'tmp/' + args.model + '/' + experiment_name + experiment_id
+model_path = args.logdir + '/' + args.model + '/' + experiment_name + experiment_id
 
 datasets = {
     'iid': dsprites.IterableDSPritesIID,
