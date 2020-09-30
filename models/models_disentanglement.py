@@ -52,13 +52,13 @@ class Decoder(nn.Module):
         return x
 
 class VAE(nn.Module):
-    def __init__(self, z_dim=10, n_channels=3, use_cuda=True, gamma=None, alpha=None, warm_up=None):
+    def __init__(self, z_dim=10, n_channels=3, b=1, use_cuda=True, gamma=None, alpha=None, warm_up=None):
         super().__init__()
         # create the encoder and decoder networks
         self.encoder = Encoder(z_dim, n_channels)
         self.decoder = Decoder(z_dim, n_channels)
         self.z_dim = z_dim
-
+        self.b = b
         if use_cuda:
             self.cuda()
     
@@ -73,20 +73,20 @@ class VAE(nn.Module):
         
         x_ = self.decoder(z)
 
-        return x_, z_loc, z_logvar
+        return x_, z, z_loc, z_logvar
     
     def batch_forward(self, data, device=CUDA, step=None):
         x, _ = data
         x = x.to(device).squeeze(axis=0)
-        x_, z_loc, z_logvar = self(x)
+        x_, z, z_loc, z_logvar = self(x)
         
-        return self.loss(x, x_, z_loc, z_logvar)
+        return self.loss(x, x_, z, z_loc, z_logvar)
 
-    def loss(self, x, x_, z_loc, z_logvar):
+    def loss(self, x, x_, z, z_loc, z_logvar):
         r = F.binary_cross_entropy_with_logits(x_, x, reduction='sum').div(x.shape[0])
         kl =  -0.5 * torch.sum(1 + z_logvar - z_loc.pow(2) - z_logvar.exp(), 1).mean(0)
 
-        return r + 8*kl, r, kl
+        return r + self.b*kl, r, kl
 
     def reconstruct_img(self, x):
         # encode image x
@@ -101,9 +101,25 @@ class VAE(nn.Module):
         z_loc, z_logvar = self.encoder(x)
         return z_loc
 
+
+class TCVAE(VAE):
+
+    def loss(self, x, x_, z, z_loc, z_logvar):
+        r = F.binary_cross_entropy_with_logits(x_, x, reduction='sum').div(x.shape[0])
+        kl =  -0.5 * torch.sum(1 + z_logvar - z_loc.pow(2) - z_logvar.exp(), 1).mean(0)
+        tc = (self.b - 1.) * self.total_correlation(z, z_loc, z_logvar)
+        return r + tc + kl, r, kl, tc
+
+    def total_correlation(self, z, z_loc, z_logvar):
+        log_qz_prob = gaussian_log_density(z.view(64, 1, 10), z_loc, z_logvar)
+        log_qz_prod = torch.logsumexp(log_qz_prob, 1).sum(1)
+        log_qz = torch.logsumexp(log_qz_prob.sum(2), 1)
+
+        return torch.mean(log_qz - log_qz_prod)
+
 class AdaGVAE(nn.Module): 
     # architecture from Locatello et. al. http://arxiv.org/abs/2002.02886
-    def __init__(self, z_dim=10, n_channels=3, use_cuda=True, adaptive=True, k=None, gamma=1, alpha=1, warm_up=-1):
+    def __init__(self, z_dim=10, n_channels=3, b=None, use_cuda=True, adaptive=True, k=None, gamma=1, alpha=1, warm_up=-1):
         super().__init__()
         # create the encoder and decoder networks
         self.encoder = Encoder(z_dim, n_channels)
@@ -201,7 +217,8 @@ class AdaGVAE(nn.Module):
 # TripletVAE
 class TVAE(AdaGVAE):
     def __init__(self, z_dim=10, n_channels=3, use_cuda=True, 
-                adaptive=True, k=None, gamma=1, alpha=1, warm_up=-1):
+                adaptive=True, k=None, gamma=1, alpha=1, warm_up=-1,
+                b=None):
         super().__init__(z_dim, n_channels, use_cuda, adaptive, k)
         
         self.alpha = alpha
