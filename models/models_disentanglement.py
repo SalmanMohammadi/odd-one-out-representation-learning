@@ -177,7 +177,7 @@ class AdaGVAE(nn.Module):
         kl_2 = -0.5 * torch.sum(1 + z_var_2.log() - z_loc_2.pow(2) - z_var_2, 1).mean(0)
         r_loss = 0.5 * r_1 + 0.5 * r_2
         kl = 0.5 * kl_1 + 0.5 * kl_2
-        return r_loss + kl, r_loss, k_l, r_1, r_2, kl_1, kl_2
+        return r_loss + kl, r_loss, kl, r_1, r_2, kl_1, kl_2
 
     def compute_gasussian_kl_pair(self, z_loc_1, z_var_1, z_loc_2, z_var_2):
         return 0.5 * (torch.true_divide(z_var_1, z_var_2) + 
