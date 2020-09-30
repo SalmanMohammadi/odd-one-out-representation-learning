@@ -87,6 +87,89 @@ class ColourDSprites(IterableDataset):
 
         return colours, samples
 
+class ColourDSpritesPairs(IterableDataset):
+    def __init__(self, dsprites_loader, size=300000, batch_size=64, k=None):
+        # 0 - background color (5 different values)
+        # 1 - object color (6 different values)
+        # 2 - shape (3 different values)
+        # 3 - scale (6 different values)
+        # 4 - orientation (40 different values)
+        # 5 - position x (32 different values)
+        # 6 - position y (32 different values)
+        self.k = k
+        self.batch_size = batch_size
+        self.num_batches = size
+        self.dsprites_loader = dsprites_loader
+        self.metadata = self.dsprites_loader.metadata
+        self.latents_sizes = self.metadata['latents_sizes']
+        if self.k:
+            assert self.k in range(1, len(self.latents_sizes)-1)
+        # An array to convert latent indices to indices in imgs
+        self.latents_bases = np.concatenate((self.latents_sizes[::-1].cumprod()[::-1][1:],
+                                                np.array([1,])))
+    def __iter__(self):
+        for i in range(self.num_batches):
+            yield self.sample()
+
+    def __len__(self):
+        return self.num_batches
+
+    def latent_to_index(self, latents):
+        return np.dot(latents, self.latents_bases).astype(int)
+    
+    @property
+    def factors_sizes(self):
+        return np.array([BACKGROUND_COLORS.shape[0], OBJECT_COLORS.shape[0]] + list(self.latents_sizes[1:]))
+    
+    def sample(self):
+        z_1, z_2 = self.sample_latent()
+        X1, X2 = map(self.latent_to_observations, (z_1, z_2))
+        X1 = torch.tensor(X1, dtype=torch.float32)
+        X2 = torch.tensor(X2, dtype=torch.float32)
+        return X1, X2
+
+    def sample_latent(self):
+        # randomly sample the factor values of the first observation
+        z_1 = np.zeros((self.batch_size, self.factors_sizes.size))
+        for lat_i, lat_size in enumerate(self.factors_sizes):
+            z_1[:, lat_i] = np.random.randint(lat_size, size=self.batch_size)
+        # sample num_relations factors of variation which should not be shared between x1,x2
+        # num_relations ~ unif(1, d-1)
+        k_idx_1 = np.zeros((self.batch_size, self.factors_sizes.size), dtype=int)
+        if self.k == 1:
+            num_relations_1 = np.ones((self.batch_size), dtype=int)
+        elif self.k:
+            num_relations_1 = np.ones((self.batch_size), dtype=int) * self.k_idx_1
+        else:
+            num_relations_1 = np.random.randint(1, self.factors_sizes.size, size=self.batch_size, dtype=int)
+
+        # sample indices of factors which will not be shared
+        for i in range(1, self.factors_sizes.size):
+            idx_1 = num_relations_1 == i
+            if sum(idx_1) > 0:
+                relations_factors = np.random.rand(sum(idx_1), self.factors_sizes.size).argpartition(1,axis=1)[:,:i]
+                k_idx_1[idx_1, relations_factors.T] = 1
+
+        z_2 = np.copy(z_1)
+        for i, lat_size in enumerate(self.factors_sizes):
+            resampled_k1 = k_idx_1[:, i].astype(bool)
+
+            z_2[resampled_k1, i] = np.random.randint(lat_size, size=sum(resampled_k1)) 
+        
+        return z_1, z_2
+
+    def latent_to_observations(self, latents):
+        c, z = latents[:, :2], latents[:, 2:]
+        X = self.dsprites_loader.X[self.latent_to_index(np.insert(z, 0, 0, axis=1))]
+        return self.colourize(c, X)
+
+    def colourize(self, c, X):
+        c = c.astype(int)
+        background_color = np.expand_dims(np.expand_dims(BACKGROUND_COLORS[c[:,0]], 2), 2)
+        object_color = np.expand_dims(np.expand_dims(OBJECT_COLORS[c[:,1]], 2), 2)
+        
+        return X * object_color + (1. - X) * background_color
+
 class ColourDSpritesTriplets(IterableDataset):
     def __init__(self, dsprites_loader, size=300000, batch_size=64, k=1):
         # 0 - background color (5 different values)
@@ -464,17 +547,39 @@ if __name__ == '__main__':
     # plt.show()
 
 
-    dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
-    data = QuantizedColourDSprites(dsprites_loader=dsprites_loader)
-    pgm_data = DataLoader(PGM(data, num_batches=300000, batch_size=32), batch_size=1)
-    x, x_, y, _, _ = next(iter(pgm_data))
-    x, x_, y = x.squeeze().numpy(), x_.squeeze().numpy(), y.squeeze().numpy()
-    print(x.shape)
-    for i in range(9):
-        show_task(x[i], x_[i], y[i], i)
+    # dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
+    # data = QuantizedColourDSprites(dsprites_loader=dsprites_loader)
+    # pgm_data = DataLoader(PGM(data, num_batches=300000, batch_size=32), batch_size=1)
+    # x, x_, y, _, _ = next(iter(pgm_data))
+    # x, x_, y = x.squeeze().numpy(), x_.squeeze().numpy(), y.squeeze().numpy()
+    # print(x.shape)
+    # for i in range(9):
+    #     show_task(x[i], x_[i], y[i], i)
     # show_task(x[0], x_[0], y[0], 0)
     # show_task(x[1], x_[1], y[1], 1)
     # show_task(x[2], x_[2], y[2], 2)
+
+
+    dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
+    data = DataLoader(ColourDSpritesPairs(dsprites_loader=dsprites_loader, batch_size=5, k=None), batch_size=1)
+    x1, x2 = next(iter(data))
+    print(x1.shape)
+    x1 = x1.reshape(5, 3, 64, 64)
+    x2 = x2.reshape(5, 3, 64, 64)
+    fig, axes = plt.subplots(5, 2, sharex=True, sharey=True, figsize=(7, 10))
+    for i in range(5):
+        axes[i][0].imshow(x1[i].T, cmap='Greys_r')
+        axes[i][1].imshow(x2[i].T, cmap='Greys_r')
+        [x.grid(False) for x in axes[i]]
+        [x.set_xticks([]) for x in axes[i]]
+        [x.set_yticks([]) for x in axes[i]]
+
+    plt.tight_layout()
+    fig.subplots_adjust(wspace=0, hspace=0.05)#, 
+                        # top=0.97, bottom=0.05, 
+                        # left=0, right=0.31)
+    # plt.savefig("triplet2.png")
+    plt.show()
 
     # dsprites_loader = ColourDSpritesLoader(npz_path='./DSPRITES/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
     # data = DataLoader(ColourDSpritesTriplets(dsprites_loader=dsprites_loader, batch_size=5, k=None), batch_size=1)

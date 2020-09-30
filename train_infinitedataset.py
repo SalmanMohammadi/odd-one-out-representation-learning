@@ -53,7 +53,8 @@ datasets = {
     'iid_pairs': dsprites.IterableDSpritesIIDPairs,
     'iid_triplets': dsprites.IterableDSpritesIIDTriplets,
     'colour_triplets': rpm.ColourDSpritesTriplets,
-    'colour': rpm.ColourDSprites
+    'colour': rpm.ColourDSprites,
+    'colour_pairs': rpm.ColourDSpritesPairs
 }
 if args.dataset not in datasets.keys():
     parser.error("Dataset should be one of: " + ", ".join(datasets.keys()))
@@ -69,7 +70,7 @@ label_dict = {
 
 vae = None
 labels = label_dict[args.model]
-if args.dataset in ['colour_triplets', 'colour']:
+if args.dataset in ['colour_triplets', 'colour', 'colour_pairs']:
     train_data, test_data = rpm.get_dsprites(train_size=args.steps, test_size=10000, batch_size=64,
                                             dataset=datasets[args.dataset], k=args.k)
     vae = model_dict[args.model](n_channels=3, gamma=args.gamma, alpha=args.alpha, warm_up=args.warm_up_steps)
@@ -96,7 +97,7 @@ if not args.train:
     with torch.no_grad():
         num_samples = 15
         x1, *_ = next(iter(test_data))
-        if args.dataset in ['colour_triplets', 'colour']:
+        if args.dataset in ['colour_triplets', 'colour', 'colour_pairs']:
             x1 = x1.reshape(64, 3, 64, 64)
         else:
             x1 = x1.reshape(64, 1, 64, 64)
@@ -105,7 +106,7 @@ if not args.train:
         for i in range(15):
             img = x1[i]
             img_ = x1_[i]
-            if args.dataset in ['colour_triplets', 'colour']:
+            if args.dataset in ['colour_triplets', 'colour', 'colour_pairs']:
                 img = img.T
                 img_ = img_.T
             axes[i, 0].imshow(img.squeeze(), cmap="Greys_r")
@@ -149,6 +150,7 @@ if not args.train:
             writer.add_scalar(label, metric, args.experiment_id)
 
 
+writer.flush()
 writer.close()
 
     # metrics_labels = ['hparam/'+x for x in config.model['metrics_labels']]

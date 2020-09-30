@@ -19,7 +19,7 @@ from data.rpm_data import ColourDSprites
 # implementation based on disentanglement_lib 
 # https://github.com/google-research/disentanglement_lib/blob/master/disentanglement_lib/evaluation/metrics/dci.py
 def compute_dci(model, dataset, train_size=10000, test_size=5000, batch_size=16):
-    if dataset in ['colour_triplets', 'colour']:
+    if dataset in ['colour_triplets', 'colour', 'colour_pairs']:
         train_data, test_data = rpm.get_dsprites(train_size=train_size, test_size=test_size, 
                                             dataset=ColourDSprites, batch_size=batch_size)
     else:

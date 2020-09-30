@@ -86,7 +86,7 @@ class VAE(nn.Module):
         r = F.binary_cross_entropy_with_logits(x_, x, reduction='sum').div(x.shape[0])
         kl =  -0.5 * torch.sum(1 + z_logvar - z_loc.pow(2) - z_logvar.exp(), 1).mean(0)
 
-        return r + kl, r, kl
+        return r + 8*kl, r, kl
 
     def reconstruct_img(self, x):
         # encode image x
@@ -103,7 +103,7 @@ class VAE(nn.Module):
 
 class AdaGVAE(nn.Module): 
     # architecture from Locatello et. al. http://arxiv.org/abs/2002.02886
-    def __init__(self, z_dim=10, n_channels=3, use_cuda=True, adaptive=True, k=None):
+    def __init__(self, z_dim=10, n_channels=3, use_cuda=True, adaptive=True, k=None, gamma=1, alpha=1, warm_up=-1):
         super().__init__()
         # create the encoder and decoder networks
         self.encoder = Encoder(z_dim, n_channels)
@@ -143,11 +143,11 @@ class AdaGVAE(nn.Module):
 
         return x1_, x2_, z_loc_1, z_var_1, z_loc_2, z_var_2
 
-    def batch_forward(self, data, device=CUDA):
-        x1, x2, _ = data
+    def batch_forward(self, data, step, device=CUDA):
+        x1, x2 = data
 
-        x1 = x1.to(device).permute(1,0,2,3)
-        x2 = x2.to(device).permute(1,0,2,3)
+        x1 = x1.to(device).squeeze()
+        x2 = x2.to(device).squeeze()
         
         x1_, x2_, z_loc_1, z_var_1, z_loc_2, z_var_2 = self(x1, x2)
 

@@ -6,7 +6,7 @@ import torchvision.transforms as transforms
 import models.models_disentanglement
 import models.models_pgm 
 from models.models_pgm import WReN
-from models.models_disentanglement import TVAE, VAE
+from models.models_disentanglement import TVAE, VAE, AdaGVAE
 from data import rpm_data as rpm
 import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter 
@@ -32,7 +32,8 @@ np.random.seed(100 + args.experiment_id)
 
 vae_dict = {
     'tvae': TVAE,
-    'vae': VAE
+    'vae': VAE,
+    'adagvae': AdaGVAE
 }
 
 if bool(args.embedding_model) ^ bool(args.model_path):
