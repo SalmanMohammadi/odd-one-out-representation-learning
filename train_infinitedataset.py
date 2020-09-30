@@ -64,7 +64,7 @@ label_dict = {
     'tvae': ["recon_1", "recon_2", "recon_3", "kl_1", "kl_2", "kl_3", "y", "y_"],
     'vae': ["recon", "kl"],
     # 'tvae': ["recon_1", "recon_2", "recon_3", "kl_1", "kl_2", "kl_3"],
-    'adagvae': ["recon_1", "recon_2", "kl_1", "kl_2"],
+    'adagvae': ["recon", "kl", "recon_1", "recon_2", "kl_1", "kl_2"],
     # : ["recon_1", "kl_1"]
 }
 
