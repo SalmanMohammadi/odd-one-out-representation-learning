@@ -102,6 +102,14 @@ class VAE(nn.Module):
         return z_loc
 
 
+
+def gaussian_log_density(x, z_loc, z_logvar):
+    norm = torch.tensor(2*np.pi, device=CUDA, requires_grad=False).log()
+    inv_sig = torch.exp(-z_logvar)
+    tmp = (x - z_loc)
+    return -0.5 * (tmp * tmp * inv_sig+ z_logvar + norm)
+
+
 class TCVAE(VAE):
 
     def loss(self, x, x_, z, z_loc, z_logvar):
@@ -412,12 +420,6 @@ class AdaTVAE(AdaGVAE):
         loss = r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3 - (2 * tc)
 
         return loss, r_1, r_2, r_3, kl_1, kl_2, kl_3, tc, tc_1, tc_2
-
-def gaussian_log_density(x, z_loc, z_logvar):
-    norm = torch.autograd.Variable(torch.tensor([np.log(2*np.pi)], device=CUDA))
-    inv_sig = torch.exp(-0.5 * z_logvar)
-    tmp = (x - z_loc) * inv_sig
-    return -0.5 * (tmp * tmp + z_logvar + norm)
 
 # similar to train() but for a given number steps by sampling from an "infinite" dataset
 def train_steps(model, dataset, optimizer, num_steps=300000, device=CUDA, 
