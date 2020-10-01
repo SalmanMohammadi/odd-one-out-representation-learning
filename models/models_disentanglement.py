@@ -119,7 +119,7 @@ class TCVAE(VAE):
 
 class AdaGVAE(nn.Module): 
     # architecture from Locatello et. al. http://arxiv.org/abs/2002.02886
-    def __init__(self, z_dim=10, n_channels=3, b=None, use_cuda=True, adaptive=True, k=None, gamma=1, alpha=1, warm_up=-1):
+    def __init__(self, z_dim=10, n_channels=3, b=1, use_cuda=True, adaptive=True, k=None, gamma=1, alpha=1, warm_up=-1):
         super().__init__()
         # create the encoder and decoder networks
         self.encoder = Encoder(z_dim, n_channels)
@@ -129,7 +129,7 @@ class AdaGVAE(nn.Module):
             self.cuda()
         self.use_cuda = use_cuda
         self.z_dim = z_dim
-
+        self.b = b
         self.k = k
         self.adaptive = adaptive
 
@@ -192,7 +192,7 @@ class AdaGVAE(nn.Module):
         kl_1 = -0.5 * torch.sum(1 + z_var_1.log() - z_loc_1.pow(2) - z_var_1, 1).mean(0)
         kl_2 = -0.5 * torch.sum(1 + z_var_2.log() - z_loc_2.pow(2) - z_var_2, 1).mean(0)
         r_loss = 0.5 * r_1 + 0.5 * r_2
-        kl = 0.5 * kl_1 + 0.5 * kl_2
+        kl = self.b *(0.5 * kl_1 + 0.5 * kl_2)
         return r_loss + kl, r_loss, kl, r_1, r_2, kl_1, kl_2
 
     def compute_gasussian_kl_pair(self, z_loc_1, z_var_1, z_loc_2, z_var_2):
@@ -292,10 +292,11 @@ class TVAE(AdaGVAE):
         d_3 = torch.norm(loc_2_ - loc_3_, 2, 1, True)
         # fully connected nn layer
         # log p(d(x1,x3)^2 - d(x1,x2)^2)c
-        if step > self.warm_up and self.training:
-            gamma = self.gamma
-        else:
-            gamma = step / self.warm_up
+        # if step > self.warm_up and self.training:
+        #     gamma = self.gamma
+        # else:
+        #     gamma = step / self.warm_up
+        gamma = self.gamma
         y = self.cdf((d_2.pow(2) - d_1.pow(2)) * (1/self.alpha))
         y = y.clamp(min=1e-18).log().sum()
         # log p(d(x2,x3)^2 - d(x1,x2)^2)
