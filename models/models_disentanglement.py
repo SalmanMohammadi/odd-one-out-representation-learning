@@ -111,7 +111,7 @@ class TCVAE(VAE):
         return r + tc + kl, r, kl, tc
 
     def total_correlation(self, z, z_loc, z_logvar):
-        log_qz_prob = gaussian_log_density(z.view.unsqueeze(1), z_loc.unsqueeze(0), z_logvar.unsqueeze(0))
+        log_qz_prob = gaussian_log_density(z.unsqueeze(1), z_loc.unsqueeze(0), z_logvar.unsqueeze(0))
         log_qz_prod = torch.logsumexp(log_qz_prob, 1).sum(1)
         log_qz = torch.logsumexp(log_qz_prob.sum(2), 1)
 
