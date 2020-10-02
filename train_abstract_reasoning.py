@@ -33,7 +33,7 @@ np.random.seed(100 + args.experiment_id)
 vae_dict = {
     'tvae': TVAE,
     'vae': VAE,
-    'adagvae': AdaGVAE
+    'adagvae': AdaGVAE,
     'tcvae': TCVAE
 }
 
