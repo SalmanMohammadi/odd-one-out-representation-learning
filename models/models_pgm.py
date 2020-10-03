@@ -16,19 +16,14 @@ class CNNEmbedder(nn.Module):
         super().__init__()
         self.z_dim = 256
         self.c1 = nn.Conv2d(n_channels, 32, kernel_size=4, stride=2)
-        self.b1 = nn.BatchNorm2d(32)
         self.c2 = nn.Conv2d(32, 32, kernel_size=4, stride=2)
-        self.b2 = nn.BatchNorm2d(32)
         self.c3 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
-        self.b3 = nn.BatchNorm2d(64)
         self.c4 = nn.Conv2d(64, 64, kernel_size=4, stride=2)
-        self.b4 = nn.BatchNorm2d(64)
         # self.fc1 = nn.Linear()
 
     def forward(self, x):
-        for c, b in zip([self.c1, self.c2, self.c3, self.c4],
-                        [self.b1, self.b2, self.b3, self.b4]):
-            x = F.relu(b(c(x)))
+        for c in ([self.c1, self.c2, self.c3, self.c4]):
+            x = F.relu(c(x))
         return x
 
 class RelationNetwork(nn.Module):
