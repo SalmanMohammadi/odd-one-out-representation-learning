@@ -339,12 +339,12 @@ class KLTVAE(TVAE):
         var_2_ = stacked_var[range(z_logvar_1.shape[0]), :, pos[:, 1]]
         var_3_ = stacked_var[range(z_logvar_1.shape[0]), :, pos[:, 2]]
 
-        kl_12 = self.compute_gasussian_kl_pair(loc_1_, var_1_, loc_2_, var_2_)#+ 1e-8
-        kl_21 = self.compute_gasussian_kl_pair(loc_2_, var_2_, loc_1_, var_1_)#+ 1e-8
-        kl_13 = self.compute_gasussian_kl_pair(loc_1_, var_1_, loc_3_, var_3_)#+ 1e-8
-        kl_31 = self.compute_gasussian_kl_pair(loc_3_, var_3_, loc_1_, var_1_)#+ 1e-8
-        kl_23 = self.compute_gasussian_kl_pair(loc_2_, var_2_, loc_3_, var_3_)#+ 1e-8
-        kl_32 = self.compute_gasussian_kl_pair(loc_3_, var_3_, loc_2_, var_2_)#+ 1e-8
+        kl_12 = compute_gasussian_kl_pair(loc_1_, var_1_, loc_2_, var_2_)#+ 1e-8
+        kl_21 = compute_gasussian_kl_pair(loc_2_, var_2_, loc_1_, var_1_)#+ 1e-8
+        kl_13 = compute_gasussian_kl_pair(loc_1_, var_1_, loc_3_, var_3_)#+ 1e-8
+        kl_31 = compute_gasussian_kl_pair(loc_3_, var_3_, loc_1_, var_1_)#+ 1e-8
+        kl_23 = compute_gasussian_kl_pair(loc_2_, var_2_, loc_3_, var_3_)#+ 1e-8
+        kl_32 = compute_gasussian_kl_pair(loc_3_, var_3_, loc_2_, var_2_)#+ 1e-8
         
         # d(x1,x2)
         d_1 = 0.5*kl_12 + 0.5*kl_21 # 0.5 * kl(z1, z2) + 0.5 * kl(z2, z1)
