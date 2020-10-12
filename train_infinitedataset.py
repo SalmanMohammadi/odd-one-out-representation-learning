@@ -6,7 +6,7 @@ import torch.optim as optim
 import torchvision.transforms as transforms
 import models.models_disentanglement as models
 import numpy as np
-from models.models_disentanglement import AdaGVAE, TVAE, AdaTVAE, VAE, TCVAE
+from models.models_disentanglement import AdaGVAE, TVAE, AdaTVAE, VAE, TCVAE, KLTVAE
 from data import rpm_data as rpm
 from data import dsprites_data as dsprites
 import matplotlib.pyplot as plt
@@ -34,7 +34,14 @@ parser.add_argument("--b", type=int, default=1)
 args = parser.parse_args()
 np.random.seed(args.experiment_id)
 
-model_dict = {'adagvae': AdaGVAE, 'tvae': TVAE, 'adatvae': AdaTVAE, 'vae': VAE, 'tcvae': TCVAE}
+model_dict = {
+    'adagvae': AdaGVAE, 
+    'tvae': TVAE, 
+    'adatvae': AdaTVAE, 
+    'vae': VAE, 
+    'tcvae': TCVAE,
+    'kltvae': KLTVAE
+}
 
 if args.train and args.test:
     parser.error("Can't have both --train and --test")
@@ -93,35 +100,35 @@ if not args.test:
 if not args.train:
     if args.load:
         vae.load_state_dict(torch.load( model_path + ".pt"))
-    # _, metrics = models.test(vae, test_data, verbose=True, metrics_labels=labels, 
-    #                             writer=writer, experiment_id=args.experiment_id)
+    _, metrics = models.test(vae, test_data, verbose=True, metrics_labels=labels, 
+                                writer=writer, experiment_id=args.experiment_id)
 
     with torch.no_grad():
-        # num_samples = 15
-        # x1, *_ = next(iter(test_data))
-        # if args.dataset in ['colour_triplets', 'colour', 'colour_pairs']:
-        #     x1 = x1.reshape(64, 3, 64, 64)
-        # else:
-        #     x1 = x1.reshape(64, 1, 64, 64)
-        # fig, axes = plt.subplots(num_samples, 2, figsize=(15,15), sharex=True, sharey=True)
-        # x1_ = vae.reconstruct_img(x1.clone().to(CUDA)).cpu().detach()
-        # for i in range(15):
-        #     img = x1[i]
-        #     img_ = x1_[i]
-        #     if args.dataset in ['colour_triplets', 'colour', 'colour_pairs']:
-        #         img = img.T
-        #         img_ = img_.T
-        #     axes[i, 0].imshow(img.squeeze(), cmap="Greys_r")
-        #     axes[i, 0].axis('off')
+        num_samples = 15
+        x1, *_ = next(iter(test_data))
+        if args.dataset in ['colour_triplets', 'colour', 'colour_pairs']:
+            x1 = x1.reshape(64, 3, 64, 64)
+        else:
+            x1 = x1.reshape(64, 1, 64, 64)
+        fig, axes = plt.subplots(num_samples, 2, figsize=(15,15), sharex=True, sharey=True)
+        x1_ = vae.reconstruct_img(x1.clone().to(CUDA)).cpu().detach()
+        for i in range(15):
+            img = x1[i]
+            img_ = x1_[i]
+            if args.dataset in ['colour_triplets', 'colour', 'colour_pairs']:
+                img = img.T
+                img_ = img_.T
+            axes[i, 0].imshow(img.squeeze(), cmap="Greys_r")
+            axes[i, 0].axis('off')
 
-        #     axes[i, 1].imshow(img_.squeeze(), cmap="Greys_r")
-        #     axes[i, 1].axis('off')
+            axes[i, 1].imshow(img_.squeeze(), cmap="Greys_r")
+            axes[i, 1].axis('off')
 
-        # axes[0, 0].set_title("source")
-        # axes[0, 1].set_title("recon")
-        # plt.tight_layout()
-        # plt.axis('off')
-        # writer.add_figure('test/reconstructions', fig)
+        axes[0, 0].set_title("source")
+        axes[0, 1].set_title("recon")
+        plt.tight_layout()
+        plt.axis('off')
+        writer.add_figure('test/reconstructions', fig)
 
         # DCI disentanglement metric
         print("DCI---")

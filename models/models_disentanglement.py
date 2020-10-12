@@ -11,6 +11,11 @@ import numpy as np
 
 CUDA = torch.device('cuda')
 
+def compute_gasussian_kl_pair(z_loc_1, z_logvar_1, z_loc_2, z_logvar_2):
+    z_var_1 = z_logvar_1.exp()
+    z_var_2 = z_logvar_2.exp()
+    return z_var_1 / z_var_2 + torch.square(z_loc_2 - z_loc_1)/z_var_2 - 1 + z_logvar_2 + z_logvar_1 
+
 class Encoder(nn.Module):
     # input - 64x64x(n_channels)
     def __init__(self, z_dim, n_channels):
@@ -181,7 +186,7 @@ class AdaGVAE(nn.Module):
     # averages aggregate posterior according to GVAE strategy in 
     # https://www.ijcai.org/Proceedings/2019/0348.pdf
     def average_posterior(self, z_loc_1, z_var_1, z_loc_2, z_var_2):
-        dim_kl = self.compute_gasussian_kl_pair(z_loc_1, z_var_1, z_loc_2, z_var_2)
+        dim_kl = compute_gasussian_kl_pair(z_loc_1, z_var_1, z_loc_2, z_var_2)
         tau = 0.5 * (torch.max(dim_kl, 1)[0][:,None] + torch.min(dim_kl, 1)[0][:,None])
 
         z_loc_1 = torch.where(dim_kl < tau, 0.5*(z_loc_1+z_loc_2), z_loc_1)
@@ -203,10 +208,6 @@ class AdaGVAE(nn.Module):
         kl = self.b *(0.5 * kl_1 + 0.5 * kl_2)
         return r_loss + kl, r_loss, kl, r_1, r_2, kl_1, kl_2
 
-    def compute_gasussian_kl_pair(self, z_loc_1, z_var_1, z_loc_2, z_var_2):
-        return 0.5 * (torch.true_divide(z_var_1, z_var_2) + 
-                    torch.true_divide((z_loc_1 - z_loc_2)**2, z_var_2) 
-                    - 1 + z_var_1.log() - z_var_2.log())
 
     # define a helper function for reconstructing images
     def reconstruct_img(self, x):
@@ -313,6 +314,54 @@ class TVAE(AdaGVAE):
         loss = r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3 - (gamma * y) - (gamma *y_)
         return loss, r_1, r_2, r_3, kl_1, kl_2, kl_3, y, y_
 
+class KLTVAE(TVAE):
+
+    def loss(self, x1, x2, x3, x1_, x2_, x3_, 
+                z_loc_1, z_logvar_1, 
+                z_loc_2, z_logvar_2, 
+                z_loc_3, z_logvar_3, pos, step):
+        # returns total_loss, recon_1, recon_2, recon_3, kl_1, kl_2, kl_3
+        r_1 = nn.functional.binary_cross_entropy_with_logits(x1_, x1, reduction='sum').div(x1.shape[0])
+        r_2 = nn.functional.binary_cross_entropy_with_logits(x2_, x2, reduction='sum').div(x1.shape[0])
+        r_3 = nn.functional.binary_cross_entropy_with_logits(x3_, x3, reduction='sum').div(x1.shape[0])
+        
+        kl_1 = -0.5 * torch.sum(1 + z_logvar_1 - z_loc_1.pow(2) - z_logvar_1.exp(), 1).mean(0)
+        kl_2 = -0.5 * torch.sum(1 + z_logvar_2 - z_loc_2.pow(2) - z_logvar_2.exp(), 1).mean(0)
+        kl_3 = -0.5 * torch.sum(1 + z_logvar_3 - z_loc_3.pow(2) - z_logvar_3.exp(), 1).mean(0)
+        
+        stacked_loc = torch.stack((z_loc_1, z_loc_2, z_loc_3), dim=-1)
+        loc_1_ = stacked_loc[range(z_loc_1.shape[0]), :, pos[:, 0]]
+        loc_2_ = stacked_loc[range(z_loc_1.shape[0]), :, pos[:, 1]]
+        loc_3_ = stacked_loc[range(z_loc_1.shape[0]), :, pos[:, 2]]
+        
+        stacked_var = torch.stack((z_logvar_1, z_logvar_2, z_logvar_3), dim=-1)
+        var_1_ = stacked_var[range(z_logvar_1.shape[0]), :, y[:, 0]]
+        var_2_ = stacked_var[range(z_logvar_1.shape[0]), :, y[:, 1]]
+        var_3_ = stacked_var[range(z_logvar_1.shape[0]), :, y[:, 2]]
+
+        kl_12 = self.compute_gasussian_kl_pair(loc_1_, var_1_, loc_2_, var_2_)#+ 1e-8
+        kl_21 = self.compute_gasussian_kl_pair(loc_2_, var_2_, loc_1_, var_1_)#+ 1e-8
+        kl_13 = self.compute_gasussian_kl_pair(loc_1_, var_1_, loc_3_, var_3_)#+ 1e-8
+        kl_31 = self.compute_gasussian_kl_pair(loc_3_, var_3_, loc_1_, var_1_)#+ 1e-8
+        kl_23 = self.compute_gasussian_kl_pair(loc_2_, var_2_, loc_3_, var_3_)#+ 1e-8
+        kl_32 = self.compute_gasussian_kl_pair(loc_3_, var_3_, loc_2_, var_2_)#+ 1e-8
+        
+        # d(x1,x2)
+        d_1 = 0.5*kl_12 + 0.5*kl_21 # 0.5 * kl(z1, z2) + 0.5 * kl(z2, z1)
+        # d(x1, x3)
+        d_2 = 0.5*kl_13 + 0.5*kl_31  # 0.5 * kl(z1, z3) + 0.5 * kl(z3, z1)
+        # d(x2, x3)
+        d_3 = 0.5*kl_23 + 0.5*kl_32  # 0.5 * kl(z2, z3) + 0.5 * kl(z3, z2)
+
+        gamma = self.gamma
+        y = self.cdf((d_2.pow(2) - d_1.pow(2)) * (1/self.alpha))
+        y = y.clamp(min=1e-18).log().sum()
+        # log p(d(x2,x3)^2 - d(x1,x2)^2)
+        y_ = self.cdf((d_3.pow(2) - d_1.pow(2)) * (1/self.alpha))
+        y_ = y_.clamp(min=1e-18).log().sum()
+        loss = r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3 - (gamma * y) - (gamma *y_)
+        return loss, r_1, r_2, r_3, kl_1, kl_2, kl_3, y, y_
+
 
 class AdaTVAE(AdaGVAE):
     def forward(self, x1, x2, x3):
@@ -338,8 +387,8 @@ class AdaTVAE(AdaGVAE):
 
     def triangle_factorisation(self, z1, z_loc_1, z_logvar_1, z2, z_loc_2, z_logvar_2, z3, z_loc_3, z_logvar_3):
         # select k dimensions with highest dkl(z1|z3)+dkl(z2|z3)
-        dim_kl_1 = self.compute_gasussian_kl_pair(z_loc_1, z_logvar_1.exp(), z_loc_3, z_logvar_3.exp())
-        dim_kl_2 = self.compute_gasussian_kl_pair(z_loc_2, z_logvar_2.exp(), z_loc_3, z_logvar_3.exp())
+        dim_kl_1 = compute_gasussian_kl_pair(z_loc_1, z_logvar_1.exp(), z_loc_3, z_logvar_3.exp())
+        dim_kl_2 = compute_gasussian_kl_pair(z_loc_2, z_logvar_2.exp(), z_loc_3, z_logvar_3.exp())
         kl_idx_1 = dim_kl_1.sort(1, descending=True)[1][:,:4]
         
         z3_ = z3.gather(1, kl_idx_1)
@@ -371,7 +420,7 @@ class AdaTVAE(AdaGVAE):
     def average_posterior(self, z_loc_1, z_var_1, z_loc_2, z_var_2):
         # could also average d-k factors for q(z|x3)...
         # average coordinates for q(z|x1) and q(z|x2)
-        dim_kl = self.compute_gasussian_kl_pair(z_loc_1, z_var_1, z_loc_2, z_var_2)
+        dim_kl = compute_gasussian_kl_pair(z_loc_1, z_var_1, z_loc_2, z_var_2)
         kl_idx = dim_kl.sort(1)[1][:,:4]
         loc_avg = 0.5 * (z_loc_1.gather(1, kl_idx) + z_loc_2.gather(1, kl_idx))
         var_avg = 0.5 * (z_var_1.gather(1, kl_idx) + z_var_2.gather(1, kl_idx))

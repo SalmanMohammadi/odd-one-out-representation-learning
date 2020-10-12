@@ -10,42 +10,51 @@ from torch.utils.tensorboard import SummaryWriter
 import sys
 sys.path.append('../')
 import models
-from models.models_disentanglement import TVAE, VAE, batch_sample_latent_triplets
+from models.models_disentanglement import TVAE, VAE, TCVAE, TVAE, AdaGVAE, batch_sample_latent_triplets
 from data import rpm_data as rpm
 from data.rpm_data import ColourDSpritesTriplets
 
 np.random.seed(100)
 
-def calculate_triplet_score(model, train_size=25000, test_size=1, batch_size=16):
+def calculate_triplet_score(model, train_size=10000, test_size=5000, batch_size=16):
     train_data, test_data = rpm.get_dsprites(train_size=train_size, test_size=test_size, 
                                             dataset=ColourDSpritesTriplets, batch_size=batch_size, k=None)
     train_loc, train_y = batch_sample_latent_triplets(model, train_data, train_size, batch_size=batch_size)
     assert train_loc.shape[0] == train_size
     assert train_y.shape[0] == train_size
-    train_acc, test_acc = predict_triplets(train_loc, train_y)
+    test_loc, test_y = batch_sample_latent_triplets(model, test_data, test_size, batch_size=batch_size)
+    assert test_loc.shape[0] == test_size
+    assert test_y.shape[0] == test_size
+    train_acc, test_acc = predict_triplets(train_loc, train_y, test_loc, test_y)
     scores = {}
-    scores['mean_train_k'] = np.mean(train_acc)
-    scores['std_train_k'] = np.std(train_acc)
-    scores['mean_test_k'] = np.mean(test_acc)
-    scores['std_test_k'] = np.std(test_acc)
+    # scores['mean_train_k'] = np.mean(train_acc)
+    # scores['std_train_k'] = np.std(train_acc)
+    scores['triplet_10k'] = test_acc
+    # scores['std_test_k'] = np.std(test_acc)
     return scores
 
-def predict_triplets(X, y, folds=5):
-    y = y.numpy()
+def predict_triplets(X_train, y_train, X_test, y_test, folds=5):
+    y_train = y_train.numpy()
+    y_test = y_test.numpy()
     train_loss = []
     test_loss = []
     # for i in range(folds):
-    kf = KFold(n_splits=folds)
-    for train_index, test_index in kf.split(X):
-        X_train, X_test = X[train_index], X[test_index]
-        y_train, y_test = y[train_index], y[test_index]
-        model =  GradientBoostingClassifier()
-        model.fit(X_train, y_train[:, -1])
-        pred = np.array(model.predict(X_train))
-        pred_test = np.array(model.predict(X_test))
-        train_loss.append(np.sum(pred == y_train[:, -1]) / X_train.shape[0])
-        test_loss.append(np.sum(pred_test == y_test[:, -1]) / X_test.shape[0])
-
+    # kf = KFold(n_splits=folds)
+    # for train_index, test_index in kf.split(X):
+    #     X_train, X_test = X[train_index], X[test_index]
+    #     y_train, y_test = y[train_index], y[test_index]
+    #     model =  GradientBoostingClassifier()
+    #     model.fit(X_train, y_train[:, -1])
+    #     pred = np.array(model.predict(X_train))
+    #     pred_test = np.array(model.predict(X_test))
+    #     train_loss.append(np.sum(pred == y_train[:, -1]) / X_train.shape[0])
+    #     test_loss.append(np.sum(pred_test == y_test[:, -1]) / X_test.shape[0])
+    model =  GradientBoostingClassifier()
+    model.fit(X_train, y_train[:, -1])
+    pred = np.array(model.predict(X_train))
+    pred_test = np.array(model.predict(X_test))
+    train_loss = np.sum(pred == y_train[:, -1]) / X_train.shape[0]
+    test_loss = np.sum(pred_test == y_test[:, -1]) / X_test.shape[0]
     return train_loss, test_loss
 
 
@@ -71,6 +80,10 @@ if __name__ == '__main__':
         print(path)
         if "tvae" in path:
             vae = TVAE(n_channels=3)
+        elif "tcvae" in path:
+            vae = TCVAE(n_channels=3)
+        elif "adagvae" in path:
+            vae = AdaGVAE(n_channels=3)
         else:
             vae = VAE(n_channels=3)
         writer = SummaryWriter(log_dir=path)
@@ -83,14 +96,21 @@ if __name__ == '__main__':
         writer.close()
 
     paths =[
-        "../tmp/tvae/gamma=0+k=1/",
-        "../tmp/tvae/gamma=0+k=rnd/",
-        "../tmp/tvae/gamma=1+k=1/",
-        "../tmp/tvae/gamma=1+k=rnd/",
-        "../tmp/vae/",
+        # "../tmp_paper/tcvae/b=2/",
+        # "../tmp_paper/tcvae/b=6/",
+        # "../tmp_paper/tcvae/b=16/",
+        # "../tmp_paper/tvae/gamma=1+k=rnd/",
+        # "../tmp_paper/tvae/gamma=6+k=rnd/",
+        # "../tmp_paper/tvae/gamma=16+k=rnd/",
+        # "../tmp_paper/adagvae/b=1/",
+        # "../tmp_paper/adagvae/b=6/",
+        # "../tmp_paper/adagvae/b=16/",
+        # "../tmp_paper/vae/b=1/",
+        # "../tmp_paper/vae/b=6/",
+        "../tmp_paper/vae/b=16/",
     ]
     for path in paths:
-        for i in range(5):
+        for i in [4]:# range(5):
             eval_model(path+str(i), i)
     # vae = TVAE(n_channels=3)
     # path = "../tmp/tvae/gamma=1+k=1/0.pt"
