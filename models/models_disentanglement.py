@@ -335,9 +335,9 @@ class KLTVAE(TVAE):
         loc_3_ = stacked_loc[range(z_loc_1.shape[0]), :, pos[:, 2]]
         
         stacked_var = torch.stack((z_logvar_1, z_logvar_2, z_logvar_3), dim=-1)
-        var_1_ = stacked_var[range(z_logvar_1.shape[0]), :, y[:, 0]]
-        var_2_ = stacked_var[range(z_logvar_1.shape[0]), :, y[:, 1]]
-        var_3_ = stacked_var[range(z_logvar_1.shape[0]), :, y[:, 2]]
+        var_1_ = stacked_var[range(z_logvar_1.shape[0]), :, pos[:, 0]]
+        var_2_ = stacked_var[range(z_logvar_1.shape[0]), :, pos[:, 1]]
+        var_3_ = stacked_var[range(z_logvar_1.shape[0]), :, pos[:, 2]]
 
         kl_12 = self.compute_gasussian_kl_pair(loc_1_, var_1_, loc_2_, var_2_)#+ 1e-8
         kl_21 = self.compute_gasussian_kl_pair(loc_2_, var_2_, loc_1_, var_1_)#+ 1e-8
