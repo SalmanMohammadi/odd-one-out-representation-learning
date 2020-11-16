@@ -16,6 +16,45 @@ def compute_gasussian_kl_pair(z_loc_1, z_logvar_1, z_loc_2, z_logvar_2):
     z_var_2 = z_logvar_2.exp()
     return z_var_1 / z_var_2 + torch.square(z_loc_2 - z_loc_1)/z_var_2 - 1 + z_logvar_2 + z_logvar_1 
 
+class ThingsEncoder(nn.Module):
+    # input - 350x350(n_channels)
+    def __init__(self, z_dim, n_channels):
+        super().__init__()
+        self.c1 = nn.Conv2d(n_channels, 64, 2, stride=2)
+        self.c2 = nn.Conv2d(64, 64, 2, stride=2)
+        self.c3 = nn.Conv2d(64, 128, 4, stride=4)
+        self.c4 = nn.Conv2d(128, 128, 4, stride=4)
+        self.fc5 = nn.Linear(512, 512)
+        self.fc_loc = nn.Linear(512, z_dim)
+        self.fc_logvar = nn.Linear(512, z_dim)
+
+    def forward(self, x):
+        for l in [self.c1, self.c2, self.c3, self.c4]:
+            x = nn.functional.relu(l(x))
+        x = x.view(-1, 512)
+        x = nn.functional.relu(self.fc5(x))
+        loc, logvar = self.fc_loc(x), self.fc_logvar(x)
+        return loc, logvar
+
+class ThingsDecoder(nn.Module):
+    def __init__(self, z_dim, n_channels):
+        super().__init__()
+        self.fc1 = nn.Linear(z_dim, 512)
+        self.fc2 = nn.Linear(512, 1024)
+        self.c1 = nn.ConvTranspose2d(64, 128, 4, stride=4)
+        self.c2 = nn.ConvTranspose2d(128, 64, 2, stride=2)
+        self.c3 = nn.ConvTranspose2d(64, 64, 2, stride=2)
+        self.c4 = nn.ConvTranspose2d(64, n_channels, 2, stride=2)
+
+    def forward(self, x):
+        x = nn.functional.relu(self.fc1(x))
+        x = nn.functional.relu(self.fc2(x))
+        x = x.view(-1, 64, 4, 4)
+        for l in [self.c1, self.c2, self.c3]:
+            x = nn.functional.relu(l(x))
+        x = self.c4(x)
+        return x
+
 class Encoder(nn.Module):
     # input - 64x64x(n_channels)
     def __init__(self, z_dim, n_channels):
@@ -57,11 +96,15 @@ class Decoder(nn.Module):
         return x
 
 class VAE(nn.Module):
-    def __init__(self, z_dim=10, n_channels=3, b=1, use_cuda=True, gamma=None, alpha=None, warm_up=None):
+    def __init__(self, z_dim=10, n_channels=3, b=1, use_cuda=True, gamma=None, alpha=None, warm_up=None, use_things=False):
         super().__init__()
         # create the encoder and decoder networks
-        self.encoder = Encoder(z_dim, n_channels)
-        self.decoder = Decoder(z_dim, n_channels)
+        if use_things:
+            self.encoder = ThingsEncoder(z_dim, n_channels)
+            self.decoder = ThingsDecoder(z_dim, n_channels)
+        else:
+            self.encoder = Encoder(z_dim, n_channels)
+            self.decoder = Decoder(z_dim, n_channels)
         self.z_dim = z_dim
         self.b = b
         if use_cuda:
@@ -132,11 +175,15 @@ class TCVAE(VAE):
 
 class AdaGVAE(nn.Module): 
     # architecture from Locatello et. al. http://arxiv.org/abs/2002.02886
-    def __init__(self, z_dim=10, n_channels=3, b=1, use_cuda=True, adaptive=True, k=None, gamma=1, alpha=1, warm_up=-1):
+    def __init__(self, z_dim=10, n_channels=3, b=1, use_cuda=True, adaptive=True, k=None, gamma=1, alpha=1, warm_up=-1, use_things=False):
         super().__init__()
         # create the encoder and decoder networks
-        self.encoder = Encoder(z_dim, n_channels)
-        self.decoder = Decoder(z_dim, n_channels)
+        if use_things:
+            self.encoder = ThingsEncoder(z_dim, n_channels)
+            self.decoder = ThingsDecoder(z_dim, n_channels)
+        else:
+            self.encoder = Encoder(z_dim, n_channels)
+            self.decoder = Decoder(z_dim, n_channels)
 
         if use_cuda:
             self.cuda()
@@ -227,8 +274,8 @@ class AdaGVAE(nn.Module):
 class TVAE(AdaGVAE):
     def __init__(self, z_dim=10, n_channels=3, use_cuda=True, 
                 adaptive=True, k=None, gamma=1, alpha=1, warm_up=-1,
-                b=None):
-        super().__init__(z_dim, n_channels, use_cuda, adaptive, k)
+                b=None, use_things=False):
+        super().__init__(z_dim, n_channels, use_cuda, adaptive, k, use_things=use_things)
         
         self.alpha = alpha
         self.gamma = gamma
@@ -361,7 +408,6 @@ class KLTVAE(TVAE):
         y_ = y_.clamp(min=1e-18).log().sum()
         loss = r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3 - (gamma * y) - (gamma *y_)
         return loss, r_1, r_2, r_3, kl_1, kl_2, kl_3, y, y_
-
 
 class AdaTVAE(AdaGVAE):
     def forward(self, x1, x2, x3):
@@ -504,16 +550,37 @@ def train_steps(model, dataset, optimizer, num_steps=300000, device=CUDA,
 
         
 
-    # metrics_mean = np.array(metrics_mean)
-    # metrics_mean = np.sum(metrics_mean, axis=0)/dataset_len
 
-    # if writer:
-    #     writer.add_scalar('train/loss', train_loss /dataset_len, epoch)
-    #     for label, metric in zip(metrics_labels, metrics_mean):
-    #         writer.add_scalar('train/'+label, metric, epoch)
-    # if verbose:
-    #     print('====> Epoch: {} Average loss: {:.4f}'.format(
-    #       epoch, train_loss / dataset_len))
+def train_things(model, dataset, optimizer, num_steps=300000, device=CUDA, 
+                verbose=True, writer=None, log_interval=100, write_interval=6000,
+                metrics_labels=None):
+    model.train()
+    steps = 0
+    epoch = 1
+    dataset_len = num_steps
+    while steps < num_steps:
+        print(f"------- Epoch {epoch:d} -------")
+        for batch_id, data in enumerate(islice(dataset, num_steps-steps)):
+            steps += 1
+            optimizer.zero_grad()
+            loss, (*metrics) = model.batch_forward(data, step=batch_id, device=device)
+            loss.backward()
+            optimizer.step()
+            # train_loss += loss.item()
+            # metrics_mean.append([x.item() for x in metrics])
+            if ((steps % log_interval == 0) or (steps == dataset_len-1)) and verbose:
+                print('Train step: {}, loss: {}'.format(
+                    steps, loss.item()))
+                if metrics_labels:
+                    print(", ".join(list(map(lambda x: "%s: %.5f" % x, zip(metrics_labels, metrics)))))
+                else:
+                    print(metrics)
+            if steps % write_interval == 0 and writer:
+                writer.add_scalar('train/loss', loss.item(), steps)
+                if metrics_labels:
+                    for label, metric in zip(metrics_labels, metrics):
+                        writer.add_scalar('train/'+label, metric, steps)
+        epoch += 1
 
 def train(model, dataset, epoch, optimizer, device=CUDA, verbose=True, writer=None, log_interval=100, metrics_labels=None):
     """
