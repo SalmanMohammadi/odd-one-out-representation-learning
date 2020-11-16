@@ -75,8 +75,8 @@ print(args)
 writer = SummaryWriter(log_dir=model_path)
 if not args.test:
     opt = optim.Adam(vae.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-8)
-    # models.train_things(vae, train_data, opt, verbose=True, writer=writer,
-    #             metrics_labels=labels, num_steps=args.steps)
+    models.train_things(vae, train_data, opt, verbose=True, writer=writer,
+                metrics_labels=labels, num_steps=args.steps)
     if args.save:
         torch.save(vae.state_dict(), model_path + ".pt")
         
