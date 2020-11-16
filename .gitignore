@@ -5,6 +5,7 @@ pycache
 __pycache__
 *.swp
 tmp
+tmp*
 *.ipynb
 *.sh
 *.png
