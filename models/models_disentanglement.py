@@ -124,7 +124,7 @@ class VAE(nn.Module):
         return x_, z, z_loc, z_logvar
     
     def batch_forward(self, data, device=CUDA, step=None):
-        x, _ = data
+        x = data
         x = x.to(device).squeeze(axis=0)
         x_, z, z_loc, z_logvar = self(x)
         
@@ -274,43 +274,64 @@ class AdaGVAE(nn.Module):
 class TVAE(AdaGVAE):
     def __init__(self, z_dim=10, n_channels=3, use_cuda=True, 
                 adaptive=True, k=None, gamma=1, alpha=1, warm_up=-1,
-                b=None, use_things=False):
+                b=None, use_things=False, supervised=True):
         super().__init__(z_dim, n_channels, use_cuda, adaptive, k, use_things=use_things)
         
         self.alpha = alpha
         self.gamma = gamma
         self.cdf = Normal(torch.tensor([0.0]).to(CUDA), torch.tensor([1.0]).to(CUDA)).cdf
         self.warm_up = warm_up
+        self.train_supervised = supervised
         self.cuda()
 
-    def forward(self, x1, x2, x3):
-        z_loc_1, z_logvar_1 = self.encoder(x1)
-        z_loc_2, z_logvar_2 = self.encoder(x2)
-        z_loc_3, z_logvar_3 = self.encoder(x3)
+    def supervised(self):
+        self.train_supervised = True
+    
+    def unsupervised(self):
+        self.train_supervised = False
 
-        z1 = self.sample_log(z_loc_1, z_logvar_1)
-        z2 = self.sample_log(z_loc_2, z_logvar_2)
-        z3 = self.sample_log(z_loc_3, z_logvar_3)
+    def forward(self, data):
+        if self.train_supervised:
+            x1, x2, x3 = data
+            z_loc_1, z_logvar_1 = self.encoder(x1)
+            z_loc_2, z_logvar_2 = self.encoder(x2)
+            z_loc_3, z_logvar_3 = self.encoder(x3)
 
-        x1_ = self.decoder(z1)
-        x2_ = self.decoder(z2)
-        x3_ = self.decoder(z3)
+            z1 = self.sample_log(z_loc_1, z_logvar_1)
+            z2 = self.sample_log(z_loc_2, z_logvar_2)
+            z3 = self.sample_log(z_loc_3, z_logvar_3)
 
-        return x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3
+            x1_ = self.decoder(z1)
+            x2_ = self.decoder(z2)
+            x3_ = self.decoder(z3)
+
+            return x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3
+        else:
+            x1 = data
+            z_loc_1, z_logvar_1 = self.encoder(x1)
+            z1 = self.sample_log(z_loc_1, z_logvar_1)
+            x1_ = self.decoder(z1)
+            return x1_, z_loc_1, z_logvar_1
+
 
     def batch_forward(self, data, device, step):
-        x1, x2, x3, y = data
-        x1 = x1.to(device).squeeze()
-        x2 = x2.to(device).squeeze()
-        x3 = x3.to(device).squeeze()
-        y = y.to(device).squeeze()
+        if self.train_supervised:
+            x1, x2, x3, y = data
+            x1 = x1.to(device).squeeze()
+            x2 = x2.to(device).squeeze()
+            x3 = x3.to(device).squeeze()
+            y = y.to(device).squeeze()
 
-        x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3 = self(x1, x2, x3)
+            x1_, x2_, x3_, z_loc_1, z_logvar_1, z_loc_2, z_logvar_2, z_loc_3, z_logvar_3 = self((x1, x2, x3))
 
-        return self.loss(x1, x2, x3, x1_, x2_, x3_, 
-                            z_loc_1, z_logvar_1, 
-                            z_loc_2, z_logvar_2, 
-                            z_loc_3, z_logvar_3, y, step)
+            return self.supervised_loss(x1, x2, x3, x1_, x2_, x3_, 
+                                        z_loc_1, z_logvar_1, 
+                                        z_loc_2, z_logvar_2, 
+                                        z_loc_3, z_logvar_3, y, step)
+        else:
+            x = data.to(device).squeeze()
+            x_, z_loc, z_logvar = self(x)
+            return self.unsupervised_loss(x, x_, z_loc, z_logvar)
 
     def batch_representation(self, x):
         z_loc, z_logvar = self.encoder(x)
@@ -323,7 +344,14 @@ class TVAE(AdaGVAE):
 
         return z_loc_1, z_loc_2, z_loc_3
 
-    def loss(self, x1, x2, x3, x1_, x2_, x3_, 
+
+    def unsupervised_loss(self, x, x_, z_loc, z_logvar):
+        r = F.binary_cross_entropy_with_logits(x_, x, reduction='sum').div(x.shape[0])
+        kl =  -0.5 * torch.sum(1 + z_logvar - z_loc.pow(2) - z_logvar.exp(), 1).mean(0)
+
+        return r + kl, r, kl
+
+    def supervised_loss(self, x1, x2, x3, x1_, x2_, x3_, 
                 z_loc_1, z_logvar_1, 
                 z_loc_2, z_logvar_2, 
                 z_loc_3, z_logvar_3, pos, step):
@@ -548,7 +576,6 @@ def train_steps(model, dataset, optimizer, num_steps=300000, device=CUDA,
                 for label, metric in zip(metrics_labels, metrics):
                     writer.add_scalar('train/'+label, metric, batch_id)
 
-        
 
 
 def train_things(model, dataset, optimizer, num_steps=300000, device=CUDA, 
@@ -559,9 +586,7 @@ def train_things(model, dataset, optimizer, num_steps=300000, device=CUDA,
     epoch = 1
     dataset_len = num_steps
     while steps < num_steps:
-        print(f"------- Epoch {epoch:d} -------")
         for batch_id, data in enumerate(islice(dataset, num_steps-steps)):
-            steps += 1
             optimizer.zero_grad()
             loss, (*metrics) = model.batch_forward(data, step=batch_id, device=device)
             loss.backward()
@@ -580,6 +605,7 @@ def train_things(model, dataset, optimizer, num_steps=300000, device=CUDA,
                 if metrics_labels:
                     for label, metric in zip(metrics_labels, metrics):
                         writer.add_scalar('train/'+label, metric, steps)
+            steps += 1
         epoch += 1
 
 def train(model, dataset, epoch, optimizer, device=CUDA, verbose=True, writer=None, log_interval=100, metrics_labels=None):

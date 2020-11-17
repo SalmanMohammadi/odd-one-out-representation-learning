@@ -20,15 +20,16 @@ parser.add_argument("--model", type=str)
 parser.add_argument("--train", action="store_true")
 parser.add_argument("--test", action="store_true")
 parser.add_argument("--save", action="store_true")
-parser.add_argument("--steps", type=int, default=300000) 
+parser.add_argument("--pretrain_steps", type=int, default=300000) 
+parser.add_argument("--finetune_steps", type=int, default=100000)
 parser.add_argument("--experiment_name", type=str, default='')
 parser.add_argument("--experiment_id", type=int, default=0)
 parser.add_argument("--load", action="store_true")
 parser.add_argument("--gamma", type=int, default=1)
 parser.add_argument("--alpha", type=float, default=1)
 parser.add_argument("--warm_up_steps", type=int, default=-1)
-parser.add_argument("--k", type=int, default=None)
 parser.add_argument("--b", type=int, default=1)
+parser.add_argument("--datadir", type=str, default=None)
 args = parser.parse_args()
 np.random.seed(args.experiment_id)
 
@@ -41,14 +42,14 @@ model_dict = {
     'kltvae': KLTVAE
 }
 
+if not args.datadir:
+    parser.error("Specify a --datadir!")
+
 if args.train and args.test:
     parser.error("Can't have both --train and --test")
 
 if args.model not in model_dict.keys():
     parser.error("Specify model: one of: " + ", ".join(model_dict.keys()))
-
-if args.warm_up_steps >= args.steps:
-    parser.error("--warm_up_steps can't be greater than --steps (default 300000).")
 
 experiment_id = '/' + str(args.experiment_id)
 experiment_name = args.experiment_name if args.experiment_name else ''
@@ -68,15 +69,26 @@ label_dict = {
 vae = None
 labels = label_dict[args.model]
 
-train_data, test_data = things_data.get_things(seed=args.experiment_id)
+pretrain_data, train_data, test_data = things_data.get_things(seed=args.experiment_id, things_dir=args.datadir)
 vae = model_dict[args.model](n_channels=3, gamma=args.gamma, alpha=args.alpha, warm_up=args.warm_up_steps, b=args.b, use_things=True)
 
 print(args)
 writer = SummaryWriter(log_dir=model_path)
 if not args.test:
     opt = optim.Adam(vae.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-8)
-    models.train_things(vae, train_data, opt, verbose=True, writer=writer,
-                metrics_labels=labels, num_steps=args.steps)
+    
+    if args.model == "tvae":
+        vae.unsupervised()
+        print("------------ Unsupervised ----------")
+        models.train_things(vae, pretrain_data, opt, verbose=True, writer=writer,
+                metrics_labels=label_dict['vae'], num_steps=args.pretrain_steps)
+        vae.supervised()
+        print("------------ Supervised ----------")
+        models.train_things(vae, train_data, opt, verbose=True, writer=writer,
+                metrics_labels=labels, num_steps=args.finetune_steps)
+    else:
+        models.train_things(vae, pretrain_data, opt, verbose=True, writer=writer,
+                metrics_labels=labels, num_steps=args.pretrain_steps)
     if args.save:
         torch.save(vae.state_dict(), model_path + ".pt")
         

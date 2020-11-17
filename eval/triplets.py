@@ -11,6 +11,7 @@ import torch
 import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter 
 from torch.utils.data import random_split
+from torch import Generator
 import sys
 sys.path.append('../')
 import models

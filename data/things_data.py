@@ -57,7 +57,23 @@ class THINGSTriplets(Dataset):
         return X1, X2, X3, positions
     
 
-def get_things(batch_size=64, seed=0):
+class FullTHINGS(Dataset):
+    def __init__(self, image_dir):
+        self.image_dir = image_dir
+        self.transform = Resize((128, 128))
+        self.images = os.listdir(image_dir)
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, idx):
+        img_path = os.path.join(self.image_dir, self.images[idx])
+        img = Image.open(img_path)
+        img = self.transform(img)
+        img = torch.tensor(np.asarray(img).T / 255.0, dtype=torch.float32)
+        return img
+
+def get_things(batch_size=64, seed=0, things_dir="/nfs/THINGS/images_raw/"):
     """
     Returns train and test DSprites dataset.
     """
@@ -65,10 +81,12 @@ def get_things(batch_size=64, seed=0):
     generator = Generator().manual_seed(seed)
     data = THINGSTriplets(things_loader=things_loader)
 
-    train_data, test_data = random_split(data, [1446680, 15000])
+    pretrain_data = DataLoader(FullTHINGS(things_dir), batch_size=64, shuffle=True)
+
+    train_data, test_data = random_split(data, [1446680, 15000])# TODO, generator=generator)
     train_data = DataLoader(train_data, batch_size=batch_size, shuffle=True)#, pin_memory=True, num_workers=16)
     test_data = DataLoader(test_data, batch_size=batch_size, shuffle=True)#, pin_memory=True, num_workers=16)                    
-    return train_data, test_data
+    return pretrain_data, train_data, test_data
 
 if __name__ == '__main__':
     things_loader = THINGSLoader(data_dir="THINGS/", shape=(128, 128))
