@@ -580,7 +580,7 @@ def train_steps(model, dataset, optimizer, num_steps=300000, device=CUDA,
 
 def train_things(model, dataset, optimizer, num_steps=300000, device=CUDA, 
                 verbose=True, writer=None, log_interval=100, write_interval=6000,
-                metrics_labels=None):
+                metrics_labels=None, prefix=''):
     model.train()
     steps = 0
     epoch = 1
@@ -601,10 +601,10 @@ def train_things(model, dataset, optimizer, num_steps=300000, device=CUDA,
                 else:
                     print(metrics)
             if steps % write_interval == 0 and writer:
-                writer.add_scalar('train/loss', loss.item(), steps)
+                writer.add_scalar(f"{prefix}_train/loss", loss.item(), steps)
                 if metrics_labels:
                     for label, metric in zip(metrics_labels, metrics):
-                        writer.add_scalar('train/'+label, metric, steps)
+                        writer.add_scalar(f"{prefix}_train/{label}", metric, steps)
             steps += 1
         epoch += 1
 

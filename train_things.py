@@ -85,7 +85,7 @@ if not args.test:
         vae.supervised()
         print("------------ Supervised ----------")
         models.train_things(vae, train_data, opt, verbose=True, writer=writer,
-                metrics_labels=labels, num_steps=args.finetune_steps)
+                metrics_labels=labels, num_steps=args.finetune_steps,prefix="finetune")
     else:
         models.train_things(vae, pretrain_data, opt, verbose=True, writer=writer,
                 metrics_labels=labels, num_steps=args.pretrain_steps)
