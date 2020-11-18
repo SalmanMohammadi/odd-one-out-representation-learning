@@ -607,6 +607,7 @@ def train_things(model, dataset, optimizer, num_steps=300000, device=CUDA,
                         writer.add_scalar(f"{prefix}_train/{label}", metric, steps)
             steps += 1
         epoch += 1
+    writer.flush()
 
 def train(model, dataset, epoch, optimizer, device=CUDA, verbose=True, writer=None, log_interval=100, metrics_labels=None):
     """

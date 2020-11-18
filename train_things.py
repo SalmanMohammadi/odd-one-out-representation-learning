@@ -29,6 +29,7 @@ parser.add_argument("--gamma", type=int, default=1)
 parser.add_argument("--alpha", type=float, default=1)
 parser.add_argument("--warm_up_steps", type=int, default=-1)
 parser.add_argument("--b", type=int, default=1)
+parser.add_argument("--workers", type=int, default=8)
 parser.add_argument("--datadir", type=str, default=None)
 args = parser.parse_args()
 np.random.seed(args.experiment_id)
@@ -69,7 +70,7 @@ label_dict = {
 vae = None
 labels = label_dict[args.model]
 
-pretrain_data, train_data, test_data = things_data.get_things(seed=args.experiment_id, things_dir=args.datadir)
+pretrain_data, train_data, test_data = things_data.get_things(seed=args.experiment_id, things_dir=args.datadir, num_workers=args.workers)
 vae = model_dict[args.model](n_channels=3, gamma=args.gamma, alpha=args.alpha, warm_up=args.warm_up_steps, b=args.b, use_things=True)
 
 print(args)
