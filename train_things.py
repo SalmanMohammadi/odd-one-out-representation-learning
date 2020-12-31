@@ -31,6 +31,7 @@ parser.add_argument("--warm_up_steps", type=int, default=-1)
 parser.add_argument("--b", type=int, default=1)
 parser.add_argument("--workers", type=int, default=8)
 parser.add_argument("--datadir", type=str, default=None)
+parser.add_argument("--z", type=int, default=10)
 args = parser.parse_args()
 np.random.seed(args.experiment_id)
 
@@ -70,11 +71,12 @@ label_dict = {
 vae = None
 labels = label_dict[args.model]
 
-pretrain_data, train_data, test_data = things_data.get_things(seed=args.experiment_id, things_dir=args.datadir, num_workers=args.workers)
-vae = model_dict[args.model](n_channels=3, gamma=args.gamma, alpha=args.alpha, warm_up=args.warm_up_steps, b=args.b, use_things=True)
+pretrain_data = things_data.get_pretrain_things(things_dir=args.datadir, num_workers=args.workers)
+vae = model_dict[args.model](n_channels=3, gamma=args.gamma, alpha=args.alpha, warm_up=args.warm_up_steps, b=args.b, use_things=True, z_dim=args.z)
 
 print(args)
 writer = SummaryWriter(log_dir=model_path)
+train_data, test_data = None, None
 if not args.test:
     opt = optim.Adam(vae.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-8)
     
@@ -84,6 +86,7 @@ if not args.test:
         models.train_things(vae, pretrain_data, opt, verbose=True, writer=writer,
                 metrics_labels=label_dict['vae'], num_steps=args.pretrain_steps)
         vae.supervised()
+        train_data, test_data = things_data.get_things(seed=args.experiment_id, num_workers=args.workers)
         print("------------ Supervised ----------")
         models.train_things(vae, train_data, opt, verbose=True, writer=writer,
                 metrics_labels=labels, num_steps=args.finetune_steps,prefix="finetune")
@@ -92,10 +95,12 @@ if not args.test:
                 metrics_labels=labels, num_steps=args.pretrain_steps)
     if args.save:
         torch.save(vae.state_dict(), model_path + ".pt")
-        
+
 if not args.train:
+    
     if args.load:
         vae.load_state_dict(torch.load( model_path + ".pt"))
+        _, test_data = things_data.get_things(seed=args.experiment_id, num_workers=args.workers)
     # _, metrics = models.test(vae, test_data, verbose=True, metrics_labels=labels, 
     #                             writer=writer, experiment_id=args.experiment_id)
 
@@ -123,11 +128,11 @@ if not args.train:
         print(len(test_data.dataset))
 
         # triplet metric
-        print("TRIPLET---")
-        scores = triplets.calculate_triplet_score(vae, dataset=test_data.dataset)
-        for label, metric in scores.items():
-            print(label, ":", metric)
-            writer.add_scalar(label, metric, args.experiment_id)
+print("TRIPLET---")
+scores = triplets.calculate_triplet_score(vae, dataset=test_data.dataset, seed=args.experiment_id)
+for label, metric in scores.items():
+    print(label, ":", metric)
+    writer.add_scalar(label, metric, args.experiment_id)
 
 writer.flush()
 writer.close()

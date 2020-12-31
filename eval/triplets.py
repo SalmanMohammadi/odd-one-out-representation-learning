@@ -25,11 +25,11 @@ CUDA = torch.device('cuda')
 np.random.seed(100)
 
 class Network(nn.Module):
-    def __init__(self):
+    def __init__(self, z_dim):
         super().__init__()
-        self.fc1 = nn.Linear(30, 30)
-        self.fc2 = nn.Linear(30, 15)
-        self.fc3 = nn.Linear(15, 3)
+        self.fc1 = nn.Linear(z_dim*3, z_dim*3)
+        self.fc2 = nn.Linear(z_dim*3, int((z_dim*3)/2))
+        self.fc3 = nn.Linear(int((z_dim*3)/2), 3)
         self.cuda()
 
     def forward(self, x):
@@ -37,17 +37,19 @@ class Network(nn.Module):
             x = nn.functional.relu(l(x))
         return x
 
-    def predict(self, x, y):
+    def score(self, x, y):
+        pred = self.predict(x)
+        return np.sum(pred == y) / x.shape[0]
+
+    def predict(self, x):
         self.eval()
         x = torch.tensor(x, dtype=torch.float32)
-        y = torch.tensor(y, dtype=torch.long)
-        dat = TensorDataset(x, y)
-        data = DataLoader(dat, batch_size=512, shuffle=False)
+        # dat = TensorDataset(x)
+        data = DataLoader(x, batch_size=512, shuffle=False)
         res = []
-        for batch_id, batch in enumerate(data):
-            x, y = batch
+        for batch_id, x in enumerate(data):
             x = x.to(CUDA)
-            y_ = self(x)
+            y_ = self.forward(x)
             pred = torch.max(nn.functional.softmax(y_), dim=1, keepdim=True)[1]
             res.append(np.array(pred.detach().cpu()))
 
@@ -60,30 +62,33 @@ class Network(nn.Module):
         y_train = torch.tensor(y_train, dtype=torch.long)
         dat = TensorDataset(x_train, y_train)
         opt = optim.Adam(self.parameters(), lr=0.01, betas=(0.9, 0.999), eps=1e-8)
-        data = DataLoader(dat, batch_size=64, shuffle=True)
+        data = DataLoader(dat, batch_size=16, shuffle=True)
+        
         for i in range(epochs):
-            # print("----EPOCH----", i)
+            print("----EPOCH----", i)
             for batch_id, batch in enumerate(data):
                 opt.zero_grad()
                 x, y = batch
-                x = x.to(CUDA)
-                y = y.to(CUDA)
+                x = x.to(CUDA).squeeze()
+                y = y.to(CUDA).squeeze()
                 y_ = self(x)
-                loss = nn.functional.cross_entropy(y_, y[:,-1], reduction='sum').div(x.shape[0])
+                print(y_)
+                loss = nn.functional.cross_entropy(y_, y, reduction='mean')
                 loss.backward()
                 opt.step()
-                # print("Batch:", batch_id, ", Loss:", loss.item())
+                print("Batch:", batch_id, ", Loss:", loss.item())
 
 
 
 def calculate_triplet_score(model, train_size=10000, test_size=5000, batch_size=16, dataset="dsprites", seed=0):
+    print("Dataset", dataset)
     if dataset == "dsprites":
         train_data, test_data = rpm.get_dsprites(train_size=train_size, test_size=test_size, 
                                             dataset=ColourDSpritesTriplets, batch_size=batch_size, k=None)
     else:
-        train_data, test_data = random_split(dataset, [10000, 5000])
-        train_data = DataLoader(train_data, batch_size=batch_size, shuffle=True)
-        test_data = DataLoader(test_data, batch_size=batch_size, shuffle=True)
+        train_data, test_data = random_split(dataset, [train_size, test_size], generator=Generator().manual_seed(seed))
+        train_data = DataLoader(train_data, batch_size=batch_size)
+        test_data = DataLoader(test_data, batch_size=batch_size)
     train_loc, train_y = batch_sample_latent_triplets(model, train_data, train_size, batch_size=batch_size)
     assert train_loc.shape[0] == train_size
     assert train_y.shape[0] == train_size
@@ -105,11 +110,11 @@ def predict_triplets(X_train, y_train, X_test, y_test, folds=5):
     train_loss = []
     test_loss = []
     model =  GradientBoostingClassifier()
+    # model = Network(64)
+    # print(model)
     model.fit(X_train, y_train[:, -1])
-    pred = np.array(model.predict(X_train))
-    pred_test = np.array(model.predict(X_test))
-    train_loss = np.sum(pred == y_train[:, -1]) / X_train.shape[0]
-    test_loss = np.sum(pred_test == y_test[:, -1]) / X_test.shape[0]
+    train_loss = model.score(X_train, y_train[:, -1])
+    test_loss = model.score(X_test, y_test[:, -1])
 
     return train_loss, test_loss
 

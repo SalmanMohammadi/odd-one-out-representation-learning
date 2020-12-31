@@ -386,7 +386,8 @@ class TVAE(AdaGVAE):
         # log p(d(x2,x3)^2 - d(x1,x2)^2)
         y_ = self.cdf((d_3.pow(2) - d_1.pow(2)) * (1/self.alpha))
         y_ = y_.clamp(min=1e-18).log().sum()
-        loss = r_1 + r_2 + r_2 + kl_1 + kl_2 + kl_3 - (gamma * y) - (gamma *y_)
+        r_loss = (r_1 + r_2 + r_2) / 3
+        loss = r_loss + kl_1 + kl_2 + kl_3 - (gamma * y) - (gamma *y_)
         return loss, r_1, r_2, r_3, kl_1, kl_2, kl_3, y, y_
 
 class KLTVAE(TVAE):
@@ -692,7 +693,7 @@ def batch_sample_latents(model, data, num_points, batch_size=16, device=CUDA):
 
 def batch_sample_latent_triplets(model, data, num_points, batch_size=16, device=CUDA):
     model.eval()
-    latents = torch.zeros((num_points, 3, 10))
+    latents = torch.zeros((num_points, 3, model.z_dim))
     labels = torch.zeros((num_points, 3))
     assert len(data.dataset) >= num_points
     with torch.no_grad():
