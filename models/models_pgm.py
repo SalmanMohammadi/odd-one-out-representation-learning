@@ -104,22 +104,15 @@ class WReN(nn.Module):
         context_embeddings = context_embeddings.reshape(-1, 8, self.embedding_size)
         answer_embeddings = answer_embeddings.reshape(-1, 6, self.embedding_size)
         stacked_panels = self.stack_context_answer_embeddings(context_embeddings, answer_embeddings)
-        # print("stacked", stacked_panels.shape)
         tagged_embeddings = torch.cat([stacked_panels, self.panel_tags_like(stacked_panels)], axis=-1)
-        # print("tagged", tagged_embeddings.shape)
         paired_embeddings = self.pair_embeddings(tagged_embeddings)
-        # print("paired", paired_embeddings.shape)
 
         # g_theta
-        # rn_paired_embeddings = self.relation_net(stacked_panels.view(-1, self.embedding_size*2))
         rn_paired_embeddings = self.relation_net(paired_embeddings)
-        # print("rn output", rn_paired_embeddings.shape)
         rn_paired_embeddings = rn_paired_embeddings.sum(-2).sum(-2)
-        # print("rn summed", rn_paired_embeddings.shape)
+
         # f_theta
         scores = self.score_embeddings(rn_paired_embeddings).sum(-1)
-        # print("scores", scores.shape)
-        # exit()
         return scores
 
     def loss(self, scores, y):
