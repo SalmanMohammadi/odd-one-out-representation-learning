@@ -9,12 +9,12 @@ Code for training weakly supervised representation learning models, and evaluati
 
 To train the weakly supervised model, use
 
-python train_infinitedataset.py -h 
+`python train_infinitedataset.py -h`
 
-To see a list of parameters.
+To see a list of parameters. The available models include VAE, B-VAE, TC-VAE, AdaGVAE, and the contribution from this paper, TVAE (Triplet-VAE). A variety of disentanglement metrics are also available, which are discussed in the paper: the FactorVAE score, the DCI score, the BVAE score, and the UDR score.
 
-To train the abstract reasoning model, use
+To train the abstract reasoning model (a WReN) model, use
 
-python train_abstractreasoning.py -h
+`python train_abstractreasoning.py -h`
 
 To see a list of parameters.
